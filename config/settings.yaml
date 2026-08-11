@@ -20,8 +20,9 @@ cv:
 
 hawkes:
   kernel: "exponential"
-  published_branching_ratio: 0.81   # Filimonov & Sornette (2012), E-mini S&P 500
-  plausible_band: [0.5, 0.95]       # documented tolerance given instrument/data-source substitution (SPY, IEX-sourced bars/ticks, not CME E-mini tick data)
+  published_branching_ratio: 0.81   # Filimonov & Sornette (2012), E-mini S&P 500, TICK-level trade data
+  plausible_band: [0.5, 0.95]       # applies ONLY to the real-tick replication (tick_events_from_recorder) -- see diagnostics/2026-08-11-hawkes-bar-proxy-underdispersion/
+  bar_proxy_max_branching_ratio: 0.15  # minute-bar events are structurally near-regular (Fano factor 0.82 on real SPY data), not bursty -- a low/near-zero ratio here is the CORRECT expected result, not a failure
   bar_event_sigma_threshold: 2.0    # for the coarse bar-threshold proxy point process
 
 rpca:

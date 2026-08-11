@@ -4,5 +4,7 @@ __pycache__/
 .pytest_cache/
 data/
 *.parquet
+!tests/**/fixtures/*.parquet
 .venv/
 *.egg-info/
+*.log
