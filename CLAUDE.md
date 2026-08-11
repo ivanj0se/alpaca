@@ -66,7 +66,24 @@ docs/architecture.md).
 - Logs: `logs/tick_recorder.log` / `logs/tick_recorder.error.log` (gitignored)
 - Status: `launchctl list | grep market-endogeneity`
 - Stop: `launchctl bootout gui/$(id -u)/com.ivan.market-endogeneity.tickrecorder`
-- Restart after code changes: bootout, then `launchctl bootstrap gui/$(id -u) <plist path>`
+
+**Restart procedure (read before touching this live process):** bootout,
+then run `ps aux | grep tick_recorder` and confirm **zero** processes are
+running -- if bootout doesn't respond within a few seconds, `kill -KILL`
+the PID rather than leaving it ambiguous. Wait a beat, then one single
+`launchctl bootstrap gui/$(id -u) <plist path>`. Never start a manual
+fallback (nohup, etc.) "just in case" while unsure the old instance is
+fully gone -- two instances holding live connections at once exhausts
+Alpaca's per-account connection limit and puts the SDK's own reconnect
+loop into a backoff-free hammering loop that's hard to distinguish from a
+real outage (see
+diagnostics/2026-08-11-tick-recorder-connection-limit-incident/, a real
+incident from exactly this). `run_forever` now refuses to start a second
+instance itself (`AlreadyRunningError`, via a PID-file lock at
+`logs/tick_recorder.lock`) as a backstop, but the manual discipline above
+still matters -- the lock only protects against literally-simultaneous
+starts, not a `launchctl bootstrap` that itself transiently fails and
+tempts a manual workaround.
 
 ## Before committing
 
