@@ -1,9 +1,12 @@
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from attribution.null_control import (
     PermutationTestResult,
+    calibrate_match_window,
     permutation_test,
     shuffle_news_timestamps,
     sidak_correction,
@@ -150,3 +153,72 @@ class TestSummarizeAttribution:
             "p_value_sidak",
             "significant",
         }
+
+
+class TestCalibrateMatchWindow:
+    """Regression coverage for a real problem seen at full-universe scale:
+    a fixed match_window saturates high-news-density tickers (real and
+    null rates both ~100%, zero discriminating power) while under-using
+    sparse ones. See diagnostics/2026-08-11-full-ladder-run/rung5_notes.md.
+    """
+
+    def test_matches_closed_form(self):
+        # min_window=0 to isolate the formula itself from clamping
+        # (clamping behavior is tested separately below).
+        n_events, obs_minutes, target = 100, 3 * 24 * 60, 0.2
+        window = calibrate_match_window(
+            n_events, obs_minutes, target_null_rate=target, min_window=pd.Timedelta(0)
+        )
+        rate_per_minute = n_events / obs_minutes
+        expected_minutes = -math.log(1 - target) / (2 * rate_per_minute)
+        assert window == pd.Timedelta(minutes=expected_minutes)
+
+    def test_denser_news_gives_narrower_window(self):
+        obs_minutes = 3 * 24 * 60
+        sparse = calibrate_match_window(20, obs_minutes, target_null_rate=0.2)
+        dense = calibrate_match_window(500, obs_minutes, target_null_rate=0.2)
+        assert dense < sparse
+
+    def test_monte_carlo_empirical_rate_matches_target(self):
+        # The actual validation that matters: does the calibrated window
+        # produce the target *empirical* coverage rate on simulated data,
+        # not just satisfy the closed-form formula algebraically.
+        rng = np.random.default_rng(0)
+        obs_minutes = 3 * 24 * 60
+        n_events, target = 200, 0.2
+        # min_window=0: at this density the un-clamped window is ~2.4 min,
+        # below the default 5-min floor -- clamping is tested separately,
+        # this test validates the formula's own accuracy.
+        window = calibrate_match_window(
+            n_events, obs_minutes, target_null_rate=target, min_window=pd.Timedelta(0)
+        )
+        w = window.total_seconds() / 60
+
+        n_trials = 3000
+        covered = 0
+        for _ in range(n_trials):
+            news_times = rng.uniform(0, obs_minutes, n_events)
+            query = rng.uniform(0, obs_minutes)
+            if np.any(np.abs(news_times - query) <= w):
+                covered += 1
+        empirical_rate = covered / n_trials
+        assert empirical_rate == pytest.approx(target, abs=0.03)
+
+    def test_returns_none_for_zero_events(self):
+        assert calibrate_match_window(0, 1000) is None
+
+    def test_clamps_to_min_window_for_very_dense_news(self):
+        window = calibrate_match_window(
+            100_000, 1000, target_null_rate=0.2, min_window=pd.Timedelta(minutes=5)
+        )
+        assert window == pd.Timedelta(minutes=5)
+
+    def test_clamps_to_max_window_for_very_sparse_news(self):
+        window = calibrate_match_window(1, 100_000, target_null_rate=0.2, max_window=pd.Timedelta(hours=6))
+        assert window == pd.Timedelta(hours=6)
+
+    def test_raises_on_invalid_target_rate(self):
+        with pytest.raises(ValueError):
+            calibrate_match_window(100, 1000, target_null_rate=0.0)
+        with pytest.raises(ValueError):
+            calibrate_match_window(100, 1000, target_null_rate=1.0)

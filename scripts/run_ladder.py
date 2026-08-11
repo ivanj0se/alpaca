@@ -22,7 +22,7 @@ import pandas as pd
 import yaml
 
 from attribution.correlate import high_residual_windows, match_to_news
-from attribution.null_control import permutation_test, summarize_attribution
+from attribution.null_control import calibrate_match_window, permutation_test, summarize_attribution
 from baselines.factor_model import make_fold_scorer as factor_scorer
 from baselines.garch import make_fold_scorer as garch_scorer
 from baselines.random_walk import make_fold_scorer as random_walk_scorer
@@ -237,11 +237,14 @@ def run_rung5_attribution(
         return None
     matches = filter_events_for_universe(gkg, universe_cfg["universe"])
 
-    time_window = pd.Timedelta(minutes=settings["attribution"]["match_window_minutes"])
+    fallback_window = pd.Timedelta(minutes=settings["attribution"]["match_window_minutes"])
+    target_null_rate = settings["attribution"]["target_null_rate"]
+    observation_minutes = (news_end - news_start).total_seconds() / 60
     n_permutations = settings["attribution"]["n_permutations"]
     alpha = settings["attribution"]["sidak_alpha"]
 
     permutation_results = {}
+    calibrated_windows = {}
     for ticker, result in usable.items():
         fit_result = train(result["windows"], config=train_config)
         scores = reconstruction_residual(fit_result.model, result["windows"])
@@ -258,13 +261,27 @@ def run_rung5_attribution(
             continue
 
         ticker_news = matches[matches["ticker"] == ticker]
+        # Per-ticker calibrated window (see calibrate_match_window) instead
+        # of one fixed window for every ticker -- a flat window saturates
+        # high-coverage names (real and null match rates both ~100%, no
+        # power to distinguish signal from noise) while under-using sparse
+        # ones. Falls back to the flat setting only when a ticker has zero
+        # news events to calibrate against (nothing to compute from).
+        window = calibrate_match_window(len(ticker_news), observation_minutes, target_null_rate=target_null_rate)
+        window = window if window is not None else fallback_window
+        calibrated_windows[ticker] = window
+
         permutation_results[ticker] = permutation_test(
-            anomaly_times, ticker_news, time_window, n_permutations=n_permutations, seed=hash(ticker) % (2**31)
+            anomaly_times, ticker_news, window, n_permutations=n_permutations, seed=hash(ticker) % (2**31)
         )
 
     if not permutation_results:
         return None
-    return summarize_attribution(permutation_results, alpha=alpha)
+    summary = summarize_attribution(permutation_results, alpha=alpha)
+    summary["match_window_minutes"] = summary["ticker"].map(
+        lambda t: calibrated_windows[t].total_seconds() / 60
+    )
+    return summary
 
 
 # --------------------------------------------------------------------------

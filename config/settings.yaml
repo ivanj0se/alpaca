@@ -31,6 +31,7 @@ rpca:
   tol: 1.0e-7
 
 attribution:
-  match_window_minutes: 30   # how close a news event must be to an anomaly to "match"
+  match_window_minutes: 30   # fallback only, used when a ticker has zero news events to calibrate against
+  target_null_rate: 0.2      # per-ticker match_window is calibrated so a random timestamp matches ~this often -- see attribution/null_control.py::calibrate_match_window. Fixes real saturation seen at 30min flat on high-coverage tickers (WMT/GS/JPM/BA/CVX ~100% real AND null match rate -- zero power to distinguish signal from noise)
   n_permutations: 2000
   sidak_alpha: 0.05
