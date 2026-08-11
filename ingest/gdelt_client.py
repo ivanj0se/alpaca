@@ -138,7 +138,21 @@ def filter_events_for_universe(gkg_df: pd.DataFrame, universe: list[dict]) -> pd
     expected. This is exactly why the attribution layer (Rung 5) uses a
     permutation/null-control significance test rather than presenting raw
     match counts as precise. `universe` entries need `ticker` and `name`
-    keys (see config/universe.yaml).
+    keys (see config/universe.yaml), plus an optional `aliases` list.
+
+    Matching on a single formal/legal name systematically misses real
+    coverage: confirmed on real cached GDELT data that "Procter & Gamble"
+    (0 matches) vs. "Procter" (53), "Amazon.com" (0) vs. "Amazon" (483),
+    and "Linde plc" (0) vs. "Linde" (71) -- ampersands and legal-entity
+    suffixes essentially never appear in how news actually refers to a
+    company. `aliases` lets a universe entry list several real variants
+    (matched with OR logic); entries without `aliases` fall back to just
+    `name` (backward compatible). Deliberately not just switching to a
+    bare common surname like "Johnson" for JNJ -- confirmed 765 matches
+    for that alone on the same data, almost certainly dominated by
+    unrelated people/companies sharing the surname; used the more specific
+    "Janssen" (J&J's pharma subsidiary brand, 6 real matches) instead. See
+    diagnostics/2026-08-11-gdelt-alias-matching/.
     """
     columns = ["timestamp", "ticker", "matched_org", "SourceCommonName", "DocumentIdentifier"]
     if gkg_df.empty:
@@ -147,8 +161,10 @@ def filter_events_for_universe(gkg_df: pd.DataFrame, universe: list[dict]) -> pd
     orgs_lower = gkg_df["Organizations"].str.lower()
     matches = []
     for entry in universe:
-        name_lower = entry["name"].lower()
-        hit_mask = orgs_lower.str.contains(name_lower, regex=False, na=False)
+        names = entry.get("aliases") or [entry["name"]]
+        hit_mask = pd.Series(False, index=gkg_df.index)
+        for name in names:
+            hit_mask |= orgs_lower.str.contains(name.lower(), regex=False, na=False)
         if not hit_mask.any():
             continue
         hits = gkg_df.loc[hit_mask, ["timestamp", "Organizations", "SourceCommonName", "DocumentIdentifier"]].copy()

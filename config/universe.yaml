@@ -24,12 +24,14 @@ universe:
     sector: financials
   - ticker: BAC
     name: "Bank of America"
+    aliases: ["Bank of America", "BofA"]
     sector: financials
   - ticker: UNH
     name: "UnitedHealth Group"
     sector: healthcare
   - ticker: JNJ
     name: "Johnson & Johnson"
+    aliases: ["Johnson & Johnson", "Janssen"]
     sector: healthcare
   - ticker: PFE
     name: "Pfizer"
@@ -42,9 +44,11 @@ universe:
     sector: energy
   - ticker: AMZN
     name: "Amazon.com"
+    aliases: ["Amazon"]
     sector: consumer
   - ticker: PG
     name: "Procter & Gamble"
+    aliases: ["Procter & Gamble", "Procter"]
     sector: consumer
   - ticker: WMT
     name: "Walmart"
@@ -66,4 +70,5 @@ universe:
     sector: utilities
   - ticker: LIN
     name: "Linde plc"
+    aliases: ["Linde"]
     sector: materials

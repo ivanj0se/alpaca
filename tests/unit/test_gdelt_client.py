@@ -160,3 +160,39 @@ class TestFilterEventsForUniverse:
     def test_empty_gkg_df_returns_empty(self):
         matches = filter_events_for_universe(pd.DataFrame(), self.UNIVERSE)
         assert matches.empty
+
+
+class TestFilterEventsForUniverseAliases:
+    """Regression coverage for a real, confirmed data-quality gap: matching
+    on a single formal/legal name misses real coverage entirely. Confirmed
+    on real cached GDELT data -- "Procter & Gamble" (0 matches) vs.
+    "Procter" (53), "Amazon.com" (0) vs. "Amazon" (483), "Linde plc" (0)
+    vs. "Linde" (71). See diagnostics/2026-08-11-gdelt-alias-matching/.
+    """
+
+    def test_matches_on_any_alias(self, tmp_path):
+        universe = [{"ticker": "PG", "name": "Procter & Gamble", "aliases": ["Procter & Gamble", "Procter"]}]
+        rows = [_gkg_row(organizations="procter reports quarterly earnings")]
+        path = _write_gkg_zip(tmp_path, "20260811014500", rows)
+        df = parse_gkg_file(path)
+        matches = filter_events_for_universe(df, universe)
+        assert len(matches) == 1
+        assert matches.iloc[0]["ticker"] == "PG"
+
+    def test_falls_back_to_name_when_no_aliases_given(self, tmp_path):
+        # Backward compatible: an entry without "aliases" still matches on
+        # "name" alone, same as before this feature existed.
+        universe = [{"ticker": "MSFT", "name": "Microsoft Corp"}]
+        rows = [_gkg_row(organizations="microsoft corporation")]
+        path = _write_gkg_zip(tmp_path, "20260811014500", rows)
+        df = parse_gkg_file(path)
+        matches = filter_events_for_universe(df, universe)
+        assert len(matches) == 1
+
+    def test_does_not_double_count_a_single_article_matching_multiple_aliases(self, tmp_path):
+        universe = [{"ticker": "PG", "name": "Procter & Gamble", "aliases": ["Procter & Gamble", "Procter"]}]
+        rows = [_gkg_row(organizations="procter & gamble announces procter brand refresh")]
+        path = _write_gkg_zip(tmp_path, "20260811014500", rows)
+        df = parse_gkg_file(path)
+        matches = filter_events_for_universe(df, universe)
+        assert len(matches) == 1  # one article, one row -- not one row per matching alias
