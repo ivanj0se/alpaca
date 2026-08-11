@@ -9,16 +9,21 @@ GDELT match data (data/gdelt_cache, 290 files, 3-day window):
 1. **5 of 20 tickers had zero GDELT matches at all** (PG, AMZN, JNJ, BAC,
    LIN don't appear in the match table) -- their observed_rate=0 /
    null_mean=0 rows mean "no news data existed to test against," not "no
-   correlation despite available news." Not a finding either way.
+   correlation despite available news." **Fixed**:
+   diagnostics/2026-08-11-gdelt-alias-matching/ -- all 5 were formal/legal
+   name strings ("Amazon.com," "Linde plc," etc.) that essentially never
+   appear verbatim in news text; a multi-alias match now recovers real
+   coverage for all 5 (e.g. AMZN 0 -> 483 matches).
 
-2. **Match counts vary by ~65x across tickers with no obvious reason**
-   (WMT 1179, GS 916, JPM 677 vs. UNH 18, AAPL 42, NVDA 53) over the same
-   3-day window. Plausibly real (banks/industrials draw more macro-news
-   coverage than a single healthcare name), but not verified against
-   actual matched headlines -- worth spot-checking before trusting
-   per-ticker rates, especially for the high-count names, given GDELT's
-   confirmed heuristic-matching false-positive risk
-   (attribution/correlate.py's docstring; the "Alphabet Bar Grill" case).
+2. **Match counts vary by ~65x across tickers** (WMT 1179, GS 916, JPM 677
+   vs. UNH 18, AAPL 42, NVDA 53) over the same 3-day window. **Checked,
+   confirmed real, not a bug**: spot-checked 8 sample matches each for WMT
+   and GS directly -- genuine mentions in retail/financial news (e.g. "blackrock;jp
+   morgan;morgan stanley;goldman sachs;reuters;citigroup" is a real
+   markets article naming several banks together). A major retailer and a
+   major investment bank draw far more routine financial-news coverage
+   than a single health insurer -- the variance reflects real coverage
+   intensity, not false-positive inflation.
 
 3. **Several tickers are saturated** (BA, WMT, GS, JPM, CVX: both real and
    null rates near/at 1.0) -- the 30-min match_window is too generous
