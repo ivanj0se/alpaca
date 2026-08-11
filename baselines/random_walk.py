@@ -56,3 +56,30 @@ def simulate_matched_to(prices: pd.Series, n_sims: int = 1, seed: int | None = N
     params = estimate_gbm_params(prices)
     n_steps = len(prices) - 1
     return simulate_gbm(params, n_steps=n_steps, n_sims=n_sims, s0=float(prices.iloc[0]), seed=seed)
+
+
+def make_fold_scorer(returns: pd.Series):
+    """Adapter for benchmark/ladder.py's evaluate_rung -- Rung 0, the
+    temporal lane's sanity floor. No dynamics at all: estimates a single
+    constant variance from the training fold's returns (i.i.d. Gaussian, no
+    time-varying volatility, no factor conditioning -- the simplest
+    possible baseline) and scores held-out returns' Gaussian NLL against
+    it. Rung 2a's GARCH must beat this by modeling volatility clustering;
+    if it can't, volatility clustering isn't adding real predictive value
+    over just "returns are noisy with roughly this much variance."
+    """
+
+    def score(train_idx: np.ndarray, test_idx: np.ndarray) -> float | None:
+        if len(train_idx) < 20 or len(test_idx) == 0:
+            return None
+        train_returns = returns.iloc[train_idx].to_numpy()
+        test_returns = returns.iloc[test_idx].to_numpy()
+
+        variance = float(np.var(train_returns, ddof=1))
+        if variance <= 0 or not np.isfinite(variance):
+            return None
+
+        nlls = 0.5 * (np.log(2 * np.pi * variance) + test_returns**2 / variance)
+        return float(np.mean(nlls))
+
+    return score
