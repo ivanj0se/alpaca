@@ -87,10 +87,29 @@ class TCNDecoder(nn.Module):
 
 class TCNVAE(nn.Module):
     """Encoder produces a per-timestep hidden representation, mean-pooled
-    over time into a single latent distribution per window (mu, logvar);
-    the sampled latent is broadcast back across the window length and
-    decoded. logvar is clamped to [-6, 6] for numerical stability (matches
+    over time into a single latent distribution per window (mu, logvar).
+    The decoder combines the sampled latent (broadcast across the window)
+    with a skip connection carrying the encoder's own per-timestep hidden
+    states. logvar is clamped to [-6, 6] for numerical stability (matches
     the SSA project's convention).
+
+    The skip connection fixes a real, measured problem with the
+    pool-then-broadcast-only design: reconstructing a 90-step window from
+    a single global latent, broadcast identically to every timestep before
+    a translation-equivariant causal-conv decoder, structurally limits the
+    decoder to near-constant output across the window regardless of how
+    the encoder is tuned. Confirmed on real AAPL data: reconstructed
+    log_return had std ~0.01-0.015 across a window vs. the actual data's
+    ~0.5-0.72 -- a 50-70x gap, i.e. an almost flat line. This is the
+    well-known "VAE reconstructions are blurry/oversmoothed" failure mode
+    (pure-bottleneck VAEs discard local detail), and skip connections from
+    encoder to decoder are the standard fix in reconstruction-focused (as
+    opposed to generation-focused) VAEs. The encoder's own limited
+    receptive field (~15 timesteps per position, see
+    diagnostics/2026-08-11-tcn-vae-receptive-field-mismatch/) means the
+    skip path still only carries *local* per-position context, not the
+    whole window -- it isn't a trivial identity shortcut, and the global
+    latent still has to capture the window's overall regime.
     """
 
     def __init__(
@@ -101,21 +120,23 @@ class TCNVAE(nn.Module):
         latent_dim: int = 8,
         kernel_size: int = 3,
         dropout: float = 0.1,
+        encoder_dilations: tuple[int, ...] = (1, 2, 4),
     ):
         super().__init__()
         self.window_len = window_len
-        self.encoder = TCNEncoder(n_features, hidden_dim, kernel_size, dilations=(1, 2, 4), dropout=dropout)
+        self.encoder = TCNEncoder(n_features, hidden_dim, kernel_size, dilations=encoder_dilations, dropout=dropout)
         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
         self.fc_logvar = nn.Linear(hidden_dim, latent_dim)
         self.fc_latent_to_hidden = nn.Linear(latent_dim, hidden_dim)
+        self.skip_fusion = nn.Linear(hidden_dim * 2, hidden_dim)
         self.decoder = TCNDecoder(n_features, hidden_dim, kernel_size, dilations=(1, 2), dropout=dropout)
 
-    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        h = self.encoder(x)  # (B, T, hidden_dim)
-        pooled = h.mean(dim=1)  # (B, hidden_dim)
+    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        h_seq = self.encoder(x)  # (B, T, hidden_dim) -- also reused as the skip-connection signal
+        pooled = h_seq.mean(dim=1)  # (B, hidden_dim)
         mu = self.fc_mu(pooled)
         logvar = self.fc_logvar(pooled).clamp(-6, 6)
-        return mu, logvar
+        return mu, logvar, h_seq
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         if self.training:
@@ -124,15 +145,16 @@ class TCNVAE(nn.Module):
             return mu + eps * std
         return mu
 
-    def decode(self, z: torch.Tensor) -> torch.Tensor:
-        h = self.fc_latent_to_hidden(z)  # (B, hidden_dim)
-        h_seq = h.unsqueeze(1).expand(-1, self.window_len, -1)  # broadcast across time
-        return self.decoder(h_seq)
+    def decode(self, z: torch.Tensor, h_seq: torch.Tensor) -> torch.Tensor:
+        h_global = self.fc_latent_to_hidden(z)  # (B, hidden_dim)
+        h_global_seq = h_global.unsqueeze(1).expand(-1, self.window_len, -1)  # broadcast across time
+        fused = self.skip_fusion(torch.cat([h_global_seq, h_seq], dim=-1))  # (B, T, hidden_dim)
+        return self.decoder(fused)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        mu, logvar = self.encode(x)
+        mu, logvar, h_seq = self.encode(x)
         z = self.reparameterize(mu, logvar)
-        recon = self.decode(z)
+        recon = self.decode(z, h_seq)
         return recon, mu, logvar
 
 

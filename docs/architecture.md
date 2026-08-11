@@ -19,7 +19,20 @@ upgrade path once the linear baseline is validated.
    residual.
 2. **Nonlinear reconstruction** (`models/`) -- TCN-VAE trained on windowed
    price/volume only, no news/fundamentals. Reconstruction residual is the
-   anomaly score.
+   anomaly score. The decoder combines a broadcast global latent (pooled
+   over the whole window) with a skip connection carrying the encoder's
+   own per-timestep hidden states -- a pure pooled-latent-only decoder
+   structurally can't produce time-varying reconstructions (confirmed on
+   real data: reconstructed log_return std was 50-70x smaller than actual,
+   an almost flat line; see
+   diagnostics/2026-08-11-tcn-vae-flat-reconstruction/). The skip path is
+   genuinely position-causal; the pooled global latent is not (it looks at
+   the whole window by design), which makes the temporal lane's NLL
+   comparison against GARCH an approximation of "which model captures this
+   instrument's structure better," not a strictly like-for-like forecasting
+   comparison -- defensible given Rung 4 is retrospective/batch
+   window-reconstruction, not real-time forecasting, but worth knowing
+   rather than assuming they're on identical footing.
 
 Both feed the same downstream question: is a given window's activity
 "explained by the market's own recent history," or not?
