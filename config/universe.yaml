@@ -1,0 +1,69 @@
+# Hand-picked liquid large-caps across sectors (~20 names), plus the Hawkes
+# benchmark instrument. GICS-ish sector labels are used only for basket
+# construction and GDELT name-matching -- not a formal classification.
+benchmark_instrument:
+  ticker: SPY
+  name: "SPDR S&P 500 ETF Trust"
+  note: "Free proxy for the Hawkes branching-ratio replication; true E-mini S&P 500 tick data is not free."
+
+universe:
+  - ticker: AAPL
+    name: "Apple Inc"
+    sector: technology
+  - ticker: MSFT
+    name: "Microsoft Corp"
+    sector: technology
+  - ticker: NVDA
+    name: "NVIDIA Corp"
+    sector: technology
+  - ticker: JPM
+    name: "JPMorgan Chase"
+    sector: financials
+  - ticker: GS
+    name: "Goldman Sachs"
+    sector: financials
+  - ticker: BAC
+    name: "Bank of America"
+    sector: financials
+  - ticker: UNH
+    name: "UnitedHealth Group"
+    sector: healthcare
+  - ticker: JNJ
+    name: "Johnson & Johnson"
+    sector: healthcare
+  - ticker: PFE
+    name: "Pfizer"
+    sector: healthcare
+  - ticker: XOM
+    name: "Exxon Mobil"
+    sector: energy
+  - ticker: CVX
+    name: "Chevron"
+    sector: energy
+  - ticker: AMZN
+    name: "Amazon.com"
+    sector: consumer
+  - ticker: PG
+    name: "Procter & Gamble"
+    sector: consumer
+  - ticker: WMT
+    name: "Walmart"
+    sector: consumer
+  - ticker: CAT
+    name: "Caterpillar"
+    sector: industrials
+  - ticker: BA
+    name: "Boeing"
+    sector: industrials
+  - ticker: GOOGL
+    name: "Alphabet"
+    sector: communication
+  - ticker: META
+    name: "Meta Platforms"
+    sector: communication
+  - ticker: NEE
+    name: "NextEra Energy"
+    sector: utilities
+  - ticker: LIN
+    name: "Linde plc"
+    sector: materials

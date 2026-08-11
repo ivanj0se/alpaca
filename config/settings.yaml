@@ -1,0 +1,35 @@
+# Central knobs. Code should read this file rather than hardcoding constants,
+# so every rung of the ladder shares the same assumptions.
+
+data:
+  bar_timeframe: "1Min"
+  adjustment: "all"          # split+dividend adjusted; keep consistent across all bar fetches
+  historical_years: 3
+  data_dir: "data"           # relative to project root; gitignored
+
+session:
+  calendar: "XNYS"           # pandas_market_calendars code for NYSE
+
+windows:
+  window_minutes: 90         # TCN-VAE input window length
+  stride_minutes: 10         # subsample stride to keep window count CPU-tractable
+
+cv:
+  n_splits: 6
+  embargo_minutes: 60        # gap on either side of each test fold, in addition to purging
+
+hawkes:
+  kernel: "exponential"
+  published_branching_ratio: 0.81   # Filimonov & Sornette (2012), E-mini S&P 500
+  plausible_band: [0.5, 0.95]       # documented tolerance given instrument/data-source substitution (SPY, IEX-sourced bars/ticks, not CME E-mini tick data)
+  bar_event_sigma_threshold: 2.0    # for the coarse bar-threshold proxy point process
+
+rpca:
+  lambda_scale: 1.0          # multiplier on the default 1/sqrt(max(n,d)) lambda
+  max_iter: 1000
+  tol: 1.0e-7
+
+attribution:
+  match_window_minutes: 30   # how close a news event must be to an anomaly to "match"
+  n_permutations: 2000
+  sidak_alpha: 0.05

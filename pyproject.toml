@@ -1,0 +1,38 @@
+[project]
+name = "market-endogeneity"
+version = "0.1.0"
+description = "Measuring endogenous vs exogenous behavior in equity markets via a news-blind anomaly model, benchmarked against a Hawkes-process branching-ratio replication."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "statsmodels",
+    "pyarrow",
+    "duckdb",
+    "torch",
+    "alpaca-py",
+    "arch",
+    "pandas_market_calendars",
+    "pyyaml",
+    "python-dotenv",
+    "requests",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-mock",
+    "responses",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: hits real network endpoints (Alpaca/GDELT), requires credentials, skipped by default",
+]
+addopts = "-m 'not live'"
+
+[tool.setuptools.packages.find]
+include = ["ingest*", "features*", "events*", "rpca*", "models*", "baselines*", "benchmark*", "attribution*"]
