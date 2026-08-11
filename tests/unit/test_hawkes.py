@@ -58,6 +58,30 @@ class TestFitHawkesExponential:
         assert fit.converged
         assert fit.n_events == len(events)
 
+    def test_default_beta0_is_data_adaptive(self):
+        # Regression test for a real bug: a fixed beta0=1.0 (1-second
+        # decay) is badly scaled for sparse events -- confirmed on real
+        # SPY minute-bar events (median gap 480s) where exp(-1.0*480) is
+        # numerically zero, so d(loglik)/d(alpha) ~ 0 at that starting
+        # point and the optimizer barely moved, reporting converged=True
+        # after landing within 1e-7 of its own (alpha0=0.5, beta0=1.0)
+        # starting guess -- not a real MLE optimum.
+        sparse_events = np.array([0.0, 500.0, 1000.0, 1600.0, 2100.0, 2700.0, 3300.0])
+        fit = fit_hawkes_exponential(sparse_events)
+        # With the old fixed beta0=1.0, this would converge suspiciously
+        # close to the (alpha0=0.5, beta0=1.0) starting point.
+        assert not (abs(fit.alpha - 0.5) < 1e-4 and abs(fit.beta - 1.0) < 1e-4)
+
+    def test_refit_agrees_across_different_alpha0_starting_points(self):
+        # The core robustness property the beta0 fix restores: on real-scale
+        # sparse data, the fit should land in the same place regardless of
+        # which alpha0 the optimizer started from. Before the fix, this was
+        # not reliably true (sometimes pinned at the lower bound, sometimes
+        # stuck near the initial guess, depending on the starting point).
+        sparse_events = np.cumsum(np.full(200, 480.0))  # regular 480s gaps, like real SPY bar-proxy events
+        ratios = [branching_ratio(fit_hawkes_exponential(sparse_events, alpha0=a0)) for a0 in [0.1, 0.5, 1.0, 2.0]]
+        assert max(ratios) - min(ratios) < 0.01
+
 
 class TestSimulateHawkes:
     def test_rejects_supercritical_alpha(self):

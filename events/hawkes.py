@@ -67,7 +67,7 @@ def fit_hawkes_exponential(
     event_times: np.ndarray,
     mu0: float | None = None,
     alpha0: float = 0.5,
-    beta0: float = 1.0,
+    beta0: float | None = None,
     T: float | None = None,
 ) -> HawkesFitResult:
     """MLE fit of mu, alpha, beta via L-BFGS-B with positivity bounds.
@@ -75,6 +75,17 @@ def fit_hawkes_exponential(
     (see events/price_events.event_times_array). `T` defaults to the last
     event time (a slight underestimate of the true observation window, but
     standard practice absent explicit window bounds).
+
+    `beta0` defaults to 1/median(inter-event gap) rather than a fixed
+    constant. A fixed beta0=1.0 (1-second decay) is badly scaled for any
+    event stream sparser than ~1/second -- confirmed on real SPY
+    minute-bar-derived events (median gap 480s): exp(-beta0 * gap) ~ 3e-209
+    at beta0=1.0, meaning d(loglik)/d(alpha) ~ 0 at the starting point.
+    The optimizer had no gradient signal there and reported converged=True
+    after barely moving from (alpha0, beta0=1.0) -- not a real MLE optimum,
+    just a numerically flat region around the starting guess. A
+    data-adaptive default puts the optimizer somewhere the likelihood
+    surface actually has curvature.
     """
     event_times = np.asarray(event_times, dtype=float)
     n = len(event_times)
@@ -85,6 +96,9 @@ def fit_hawkes_exponential(
 
     if mu0 is None:
         mu0 = max(n / T * 0.5, 1e-6)
+    if beta0 is None:
+        median_gap = float(np.median(np.diff(event_times)))
+        beta0 = 1.0 / median_gap if median_gap > 0 else 1.0
 
     x0 = np.array([mu0, alpha0, beta0])
     bounds = [(1e-10, None), (1e-10, None), (1e-10, None)]
