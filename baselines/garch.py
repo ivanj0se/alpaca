@@ -83,19 +83,56 @@ def out_of_sample_neg_log_likelihood(fit: GarchFitResult, next_return: float) ->
     return 0.5 * (np.log(2 * np.pi * variance) + next_return**2 / variance)
 
 
+def forecast_variance_walk_forward(fit: GarchFitResult, train_returns: pd.Series, test_returns: pd.Series) -> np.ndarray:
+    """Genuine walk-forward one-step-ahead variance forecast: at each test
+    point t, applies the GARCH(1,1) recursion fed by the *actual* realized
+    return at t-1 (already available by the time t is being forecast --
+    standard live-deployment GARCH usage, not lookahead), rather than
+    holding a single multi-step-ahead projection fixed across the whole
+    fold.
+
+    Necessary for near-unit-root (IGARCH-like) fits, which are the norm
+    for real intraday minute returns (persistence ~0.98-1.0 measured
+    repeatedly on real data -- see docs/architecture.md). Confirmed on
+    real AAPL data: with persistence ~1.00003, a static multi-step forecast
+    barely decays from wherever training happened to end, producing
+    variance up to 35x too high for much of a 4,000-minute test fold and
+    making GARCH score *worse* than a flat constant-variance null on that
+    fold -- not because GARCH is bad, but because the static-forecast
+    evaluation wasn't using it the way it's meant to be used.
+    """
+    omega = float(fit.model_result.params["omega"])
+    alpha = float(fit.model_result.params["alpha[1]"])
+    beta = float(fit.model_result.params["beta[1]"])
+
+    prev_sigma2 = float(fit.model_result.conditional_volatility.iloc[-1] ** 2)
+    prev_r2 = float((train_returns.iloc[-1] * fit.scale) ** 2)
+
+    test_r_scaled = test_returns.to_numpy() * fit.scale
+    n = len(test_r_scaled)
+    sigma2 = np.empty(n)
+    for i in range(n):
+        sigma2[i] = omega + alpha * prev_r2 + beta * prev_sigma2
+        prev_sigma2 = sigma2[i]
+        prev_r2 = test_r_scaled[i] ** 2
+
+    return sigma2 / (fit.scale**2)
+
+
 def make_fold_scorer(returns: pd.Series):
     """Adapter for benchmark/ladder.py's evaluate_rung: given positional
     train/test indices into `returns`, fit GARCH on the training fold and
-    return the mean out-of-sample NLL over the test fold, scored against a
-    forecast_variance_path (no refitting mid-fold). Returns None (fold
-    skipped) if the training slice is too short or the fit doesn't
+    return the mean out-of-sample NLL over the test fold, scored via
+    forecast_variance_walk_forward (one-step-ahead, updated with each
+    realized test return -- no refitting, no lookahead). Returns None
+    (fold skipped) if the training slice is too short or the fit doesn't
     converge, rather than raising and aborting the whole ladder run.
     """
 
     def score(train_idx: np.ndarray, test_idx: np.ndarray) -> float | None:
         train_returns = returns.iloc[train_idx]
         test_returns = returns.iloc[test_idx]
-        if len(train_returns) < 20:
+        if len(train_returns) < 20 or len(test_returns) == 0:
             return None
         try:
             fit = fit_garch(train_returns)
@@ -104,7 +141,7 @@ def make_fold_scorer(returns: pd.Series):
         if not fit.model_result.convergence_flag == 0:
             return None
 
-        variances = forecast_variance_path(fit, horizon=len(test_returns))
+        variances = forecast_variance_walk_forward(fit, train_returns, test_returns)
         actual = test_returns.to_numpy()
         nlls = 0.5 * (np.log(2 * np.pi * variances) + actual**2 / variances)
         return float(np.mean(nlls))

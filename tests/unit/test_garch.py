@@ -7,6 +7,7 @@ import pytest
 from baselines.garch import (
     fit_garch,
     forecast_one_step_variance,
+    forecast_variance_walk_forward,
     garch_anomaly_score,
     make_fold_scorer,
     out_of_sample_neg_log_likelihood,
@@ -103,6 +104,57 @@ class TestForecastAndNll:
 
         actual = out_of_sample_neg_log_likelihood(fake_fit, next_return)
         assert actual == pytest.approx(expected)
+
+
+class TestForecastVarianceWalkForward:
+    def _fit_on(self, n=3000, seed=0):
+        r = _simulate_garch11(1e-6, 0.1, 0.85, n, seed=seed)
+        returns = _returns_series(r)
+        return fit_garch(returns), returns
+
+    def test_output_length_matches_test_returns(self):
+        fit, returns = self._fit_on()
+        train, test = returns.iloc[:-100], returns.iloc[-100:]
+        variances = forecast_variance_walk_forward(fit, train, test)
+        assert len(variances) == len(test)
+
+    def test_all_variances_positive(self):
+        fit, returns = self._fit_on()
+        train, test = returns.iloc[:-100], returns.iloc[-100:]
+        variances = forecast_variance_walk_forward(fit, train, test)
+        assert (variances > 0).all()
+
+    def test_depends_on_realized_test_returns_not_just_horizon(self):
+        # The defining property vs. the old static forecast_variance_path:
+        # two different realized test sequences of the same length must
+        # produce different variance paths, since walk-forward updates on
+        # the actual values as they're "revealed."
+        fit, returns = self._fit_on()
+        train = returns.iloc[:-100]
+        test_a = returns.iloc[-100:]
+        rng = np.random.default_rng(99)
+        test_b = pd.Series(rng.normal(0, 0.05, 100), index=test_a.index)  # very different, larger-scale returns
+
+        var_a = forecast_variance_walk_forward(fit, train, test_a)
+        var_b = forecast_variance_walk_forward(fit, train, test_b)
+        assert not np.allclose(var_a, var_b)
+
+    def test_first_step_uses_last_training_observation(self):
+        # sigma2[0] = omega + alpha*(last train return)^2 + beta*(last train sigma2),
+        # independent of test_returns' own values -- verify against the
+        # fitted params directly rather than re-deriving the formula loosely.
+        fit, returns = self._fit_on()
+        train, test = returns.iloc[:-50], returns.iloc[-50:]
+        variances = forecast_variance_walk_forward(fit, train, test)
+
+        omega = fit.model_result.params["omega"]
+        alpha = fit.model_result.params["alpha[1]"]
+        beta = fit.model_result.params["beta[1]"]
+        last_sigma2 = float(fit.model_result.conditional_volatility.iloc[-1] ** 2)
+        last_r2 = float((train.iloc[-1] * fit.scale) ** 2)
+        expected_first_scaled = omega + alpha * last_r2 + beta * last_sigma2
+
+        assert variances[0] * fit.scale**2 == pytest.approx(expected_first_scaled, rel=1e-6)
 
 
 class TestMakeFoldScorer:
