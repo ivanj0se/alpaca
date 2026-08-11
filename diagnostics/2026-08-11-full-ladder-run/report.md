@@ -2,7 +2,7 @@
 
 ## Rung 1: Hawkes branching ratio (trust gate)
 - Bar-proxy (SPY): branching_ratio=0.0000 (expect < 0.15) [PASS], 760 events
-- Real-tick replication: SKIPPED -- 975 ticks over 0.1 days (need >=5000 over >=5 days)
+- Real-tick replication: SKIPPED -- 1694 ticks over 0.1 days (need >=5000 over >=5 days)
 
 ## Temporal lane (Rung 0 -> Rung 2a GARCH -> Rung 4 TCN-VAE)
 | Ticker | Rung0 NLL | Rung2a NLL | 2a beats 0 | Rung4 NLL | 4 beats 2a |
@@ -36,23 +36,23 @@
 ## Rung 5: News-correlation attribution
 | ticker   |   observed_rate |   null_mean |   null_std |   p_value |   p_value_sidak | significant   |
 |:---------|----------------:|------------:|-----------:|----------:|----------------:|:--------------|
-| AAPL     |        1        |    0.469667 |  0.402315  |    0.264  |        0.997825 | False         |
-| UNH      |        0.666667 |    0.295167 |  0.318048  |    0.2785 |        0.998539 | False         |
-| META     |        1        |    0.563    |  0.416504  |    0.395  |        0.999957 | False         |
-| NVDA     |        0.666667 |    0.534833 |  0.289075  |    0.546  |        1        | False         |
-| NEE      |        0.666667 |    0.591    |  0.321018  |    0.636  |        1        | False         |
-| GOOGL    |        0        |    0.628333 |  0.428664  |    1      |        1        | False         |
-| BA       |        1        |    0.99975  |  0.0111775 |    0.9995 |        1        | False         |
-| CAT      |        1        |    0.9865   |  0.1028    |    0.981  |        1        | False         |
+| BAC      |        1        |    0.327    |  0.344906  |    0.0965 |        0.86861  | False         |
+| AAPL     |        1        |    0.450667 |  0.405668  |    0.259  |        0.997509 | False         |
+| UNH      |        0.666667 |    0.283667 |  0.316368  |    0.266  |        0.99794  | False         |
+| META     |        1        |    0.557    |  0.423839  |    0.4025 |        0.999966 | False         |
+| NVDA     |        0.666667 |    0.537833 |  0.287154  |    0.556  |        1        | False         |
+| NEE      |        0.666667 |    0.592167 |  0.324474  |    0.6425 |        1        | False         |
+| GOOGL    |        0        |    0.648    |  0.41871   |    1      |        1        | False         |
+| BA       |        1        |    0.9995   |  0.0158035 |    0.999  |        1        | False         |
+| CAT      |        1        |    0.98625  |  0.0996792 |    0.979  |        1        | False         |
 | WMT      |        1        |    1        |  0         |    1      |        1        | False         |
-| PG       |        0        |    0        |  0         |    1      |        1        | False         |
-| AMZN     |        0        |    0        |  0         |    1      |        1        | False         |
-| XOM      |        0        |    0.614667 |  0.276016  |    1      |        1        | False         |
-| PFE      |        0.333333 |    0.961333 |  0.133143  |    0.9985 |        1        | False         |
-| JNJ      |        0        |    0        |  0         |    1      |        1        | False         |
-| BAC      |        0        |    0        |  0         |    1      |        1        | False         |
+| PG       |        0        |    0.5315   |  0.456079  |    1      |        1        | False         |
+| XOM      |        0        |    0.6205   |  0.281922  |    1      |        1        | False         |
+| CVX      |        1        |    0.99625  |  0.0431386 |    0.9925 |        1        | False         |
+| PFE      |        0.333333 |    0.964167 |  0.123353  |    1      |        1        | False         |
+| JNJ      |        0        |    0.107    |  0.205063  |    1      |        1        | False         |
 | GS       |        1        |    1        |  0         |    1      |        1        | False         |
 | JPM      |        1        |    0.999667 |  0.0105357 |    0.999  |        1        | False         |
-| MSFT     |        0.333333 |    0.632833 |  0.272885  |    0.956  |        1        | False         |
-| CVX      |        1        |    0.9975   |  0.0352668 |    0.995  |        1        | False         |
-| LIN      |        0        |    0        |  0         |    1      |        1        | False         |
+| MSFT     |        0.333333 |    0.633    |  0.274428  |    0.952  |        1        | False         |
+| AMZN     |        1        |    0.999167 |  0.0166458 |    0.9975 |        1        | False         |
+| LIN      |        0.5      |    0.6305   |  0.346366  |    0.8565 |        1        | False         |
