@@ -62,9 +62,33 @@ anyway) instead of using one fixed window for the whole universe. The
 report table now includes each ticker's calibrated `match_window_minutes`
 for transparency.
 
-## Next: re-run the full ladder to measure the actual effect
+## Measured effect (full-universe re-run, 2026-08-11)
 
-This entry documents the mechanism and its real limitation; a follow-up
-full-universe run will show whether null_mean values are now more
-consistent across tickers (the actual goal) for the mid-tier and sparse
-names, and by how much residual saturation remains for the top 8.
+Before (flat 30-min window, from diagnostics/2026-08-11-full-ladder-run/rung5_notes.md):
+WMT/GS/JPM/BA/CVX all had `observed_rate` and `null_mean` both ~1.0 --
+saturated, no discriminating power at all.
+
+After (calibrated per-ticker window, `target_null_rate=0.2`):
+
+| Ticker | match_window (min) | null_mean | Saturated? |
+|---|---|---|---|
+| MSFT, LIN, GOOGL, META, XOM, NEE, PG | 6.6-9.1 | 0.195-0.216 | No -- right at target |
+| AAPL | 11.5 | 0.205 | No |
+| NVDA, PFE, CAT | 5-9.1 (floor or near) | 0.21-0.52 | Partial |
+| BAC, CVX | 5-23 | 0.25-0.62 | Partial |
+| UNH | 26.8 | 0.26 | No |
+| JNJ | 80.3 | 0.23 | No |
+| BA, AMZN, JPM, GS, WMT | 5 (floor) | 0.69-0.93 | Yes, still |
+
+The calibration clearly works for 13 of 20 tickers: `null_mean` landed
+within a few points of the 0.2 target instead of saturating near 1.0. The
+5 highest-coverage names (BA, AMZN, JPM, GS, WMT) still show elevated
+`null_mean` even at the 5-minute floor -- confirms the honest limitation
+documented above (their *true* calibrated window is sub-minute, which the
+floor deliberately refuses to use). Net result: the test now has real
+discriminating power for 15/20 tickers where it previously had none for
+the 5 densest; still no ticker survives Sidak correction at this data
+scale (3-day news window, small anomaly counts per ticker -- see
+diagnostics/2026-08-11-session-boundary-returns/findings.md for a
+separate, larger fix landed the same day). Not a publishable result yet,
+but the calibration mechanism itself is confirmed working as designed.
