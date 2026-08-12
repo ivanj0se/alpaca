@@ -122,6 +122,35 @@ def fit_hawkes_exponential(
     )
 
 
+def fit_hawkes_exponential_multistart(
+    event_times: np.ndarray,
+    alpha0_grid: tuple[float, ...] = (0.1, 0.5, 0.9, 2.0),
+    T: float | None = None,
+) -> HawkesFitResult:
+    """Refits from several `alpha0` starting points and keeps the one with
+    the highest achieved log-likelihood among converged fits.
+
+    Exists because the L-BFGS-B likelihood surface for this model is not
+    always well-conditioned enough for a single default start to be
+    trustworthy -- confirmed on real SPY tick-level event streams
+    (diagnostics/2026-08-11-real-tick-hawkes-replication/findings.md):
+    refitting the same event set from different `alpha0` starting points
+    landed on branching-ratio estimates ranging from ~0.03 to >1.6 for
+    several moderate-density event definitions, each individually
+    reporting `converged=True`. The earlier
+    diagnostics/2026-08-11-hawkes-optimizer-initialization-bug/ fix (a
+    data-adaptive `beta0`) made the *sparse* bar-proxy case robust to this,
+    but doesn't guarantee a well-conditioned surface at every event
+    density -- this is the general-purpose hardening `fit_hawkes_exponential`
+    itself doesn't attempt (it fits once, from whatever `alpha0` the caller
+    picked). Falls back to whichever fit is available if none converged.
+    """
+    fits = [fit_hawkes_exponential(event_times, alpha0=a0, T=T) for a0 in alpha0_grid]
+    converged = [f for f in fits if f.converged]
+    candidates = converged or fits
+    return max(candidates, key=lambda f: f.loglik)
+
+
 def simulate_hawkes(mu: float, alpha: float, beta: float, T: float, seed: int | None = None) -> np.ndarray:
     """Exact simulation via the cluster/branching representation: immigrants
     arrive as a homogeneous Poisson(mu) process on [0, T]; each event

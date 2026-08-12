@@ -106,14 +106,94 @@ rather than a silent failure:
   (not pinned at an optimizer bound the way the earlier
   diagnostics/2026-08-11-hawkes-optimizer-initialization-bug/ case was).
 
+## Follow-up: tested the event-definition question directly, found and fixed a real optimizer robustness gap
+
+Went back to check the two hypotheses left open above, both against real
+data rather than speculation.
+
+**Volatility-clustering confound -- tested and refuted.** The z-score
+threshold uses one *global* std over the whole 29-day series as the
+denominator. If local volatility clusters over time (well established --
+this whole project's other rungs confirm it), a global-std threshold
+flags disproportionately more events during high-vol stretches and fewer
+during calm ones, which would look like temporal clustering (self-excitation)
+to a Hawkes fit even with zero genuine causal triggering -- a "doubly
+stochastic" process misread as self-exciting. Confirmed the mechanism is
+present: local event-flagging rate (1000-tick windows) correlates 0.754
+with local realized volatility. But testing it directly kills it as *the*
+explanation: refitting on a local-std-normalized (500-tick rolling window)
+version of the same threshold gives branching_ratio=0.9983 -- statistically
+indistinguishable from the global-std result (0.9969), not the substantial
+drop the confound hypothesis would predict.
+
+**Literal price-change event definition (closer to Filimonov & Sornette's
+actual construction -- every distinct price change is an event, no
+z-score threshold at all) is unstable, not lower.** n=290,487 (59% of all
+ticks), branching_ratio=1.5937 -- *above* 1, mathematically outside the
+range a stationary Hawkes process can produce. Confirmed this isn't an
+optimizer-bound artifact (bounds are pure positivity constraints, no
+upper limit) -- it's a genuine finite-sample MLE result. At maximal event
+density the exponential-kernel model is even less well-behaved, not more.
+
+**A full threshold sweep (sigma 1.5 to 6.0) exposed a real gap in the
+fitter, not just an interesting market fact.** Refitting the *same* event
+set from different `alpha0` starting points should agree (this exact
+property is what the data-adaptive-beta0 fix guaranteed for the sparse
+bar-proxy case, see diagnostics/2026-08-11-hawkes-optimizer-initialization-bug/)
+-- but at several of these tick-level thresholds it doesn't:
+
+| sigma>= | n_events | branching_ratio across alpha0=[0.1, 0.5, 0.9, 2.0] |
+|---|---|---|
+| 2.0 | 23,470 | 0.9969, 0.9969, 0.9969, 0.9969 (robust) |
+| 2.5 | 13,578 | 0.9933, 0.9933, 1.0988, 0.0274 (**not robust**) |
+| 3.0 | 9,013 | 1.2378, 0.7987, 0.9889, 0.9889 (**not robust**) |
+| 3.5 | 5,859 | 0.9820, 1.6114, 0.0180, 0.0461 (**not robust**) |
+| 6.0 | 932 | 0.9128, 0.3929, 0.9128, 0.1433 (**not robust**) |
+
+The "moderate, plausible-looking" values that showed up in a naive
+single-start sweep (e.g. 0.80 at sigma=3.0, 0.39 at sigma=6.0) are
+**not trustworthy** -- they're arbitrary local optima, not well-identified
+estimates. This means my first-pass threshold sweep (in an earlier,
+unlogged scratch run) was misleading on its face; only re-fitting from
+multiple starts and taking the best log-likelihood revealed which numbers
+were real.
+
+**Fix:** added `events/hawkes.py::fit_hawkes_exponential_multistart`
+(refits from a small alpha0 grid, keeps the highest-log-likelihood
+converged result) and wired it into both the bar-proxy and real-tick
+fits in `scripts/run_ladder.py::run_rung1_hawkes` -- the trust gate should
+not be silently trusting a single arbitrary local optimum. 4 new tests in
+`tests/unit/test_hawkes.py::TestFitHawkesExponentialMultistart`.
+
+**Re-ran the production sigma>=2.0 fit through the hardened multistart
+path: branching_ratio=0.9969, identical to the single-start result
+(loglik=-88229.78, the best among the grid).** The original number was
+already sitting at the true optimum for this configuration -- multistart
+doesn't change the answer here, but now actively guards against the
+instability documented above recurring silently in a future run with
+different data or thresholds.
+
 ## Bottom line
 
 This is real progress, not a dead end: Rung 1's real-tick check produced
 its first-ever actual number today instead of being permanently gated on
-data that would take weeks to accumulate live. That number happens to
-disagree with the configured plausible band, which is scientifically more
-useful than a pass would have been -- it's telling us something genuine
-about single-venue tick-level order flow that the bar-proxy couldn't see
-at all. Worth a follow-up pass on the event-definition question before
-treating either the bar-proxy near-zero or this near-one result as "the"
-answer for SPY's true tick-level branching ratio.
+data that would take weeks to accumulate live, and that number is now
+more defensible than when it was first measured. The event-definition
+follow-up did real work: it killed the volatility-clustering-confound
+hypothesis outright, showed the "any price change" definition is
+*worse* (unstable) rather than a fix, and -- most concretely -- found and
+fixed a real robustness gap in the fitter itself (single-start MLE
+silently landing on arbitrary local optima at several plausible
+thresholds). None of that made the near-critical result go away; if
+anything it survived every test aimed at explaining it away, which raises
+confidence that 0.9969 is a real, well-identified property of this
+specific event stream (global-std z>=2 on IEX trade prints), not an
+artifact.
+
+What's still open is *why* single-venue tick-level order flow looks this
+different from Filimonov & Sornette's consolidated-tape futures result --
+the IEX-only-venue hypothesis remains the leading, unverified explanation
+(would need a paid consolidated feed to check directly). Worth a follow-up
+pass on this question before treating either the bar-proxy near-zero or
+this near-one result as "the" answer for SPY's true tick-level branching
+ratio.

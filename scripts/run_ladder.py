@@ -28,7 +28,7 @@ from baselines.garch import make_fold_scorer as garch_scorer
 from baselines.random_walk import make_fold_scorer as random_walk_scorer
 from benchmark.cv import make_t1
 from benchmark.ladder import evaluate_rung, gate_check
-from events.hawkes import branching_ratio, fit_hawkes_exponential
+from events.hawkes import branching_ratio, fit_hawkes_exponential_multistart
 from events.price_events import bar_threshold_events, event_times_array, tick_events_from_recorder
 from features.returns import build_feature_frame, log_returns, session_boundary_mask
 from features.windows import make_windows
@@ -82,7 +82,7 @@ def run_rung1_hawkes(data_dir: Path, settings: dict) -> dict:
         events = bar_threshold_events(spy_bars, sigma_threshold=settings["hawkes"]["bar_event_sigma_threshold"])
         times = event_times_array(events, ticker="SPY")
         if len(times) > 10:
-            fit = fit_hawkes_exponential(times)
+            fit = fit_hawkes_exponential_multistart(times)
             result["bar_proxy"] = {
                 "n_events": len(times),
                 "branching_ratio": branching_ratio(fit),
@@ -102,7 +102,7 @@ def run_rung1_hawkes(data_dir: Path, settings: dict) -> dict:
 
     tick_events = tick_events_from_recorder(ticks, sigma_threshold=settings["hawkes"]["bar_event_sigma_threshold"])
     tick_times = event_times_array(tick_events, ticker="SPY")
-    fit = fit_hawkes_exponential(tick_times)
+    fit = fit_hawkes_exponential_multistart(tick_times)
     result["tick"] = {
         "n_events": len(tick_times),
         "branching_ratio": branching_ratio(fit),

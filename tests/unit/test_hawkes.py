@@ -3,12 +3,14 @@ import pandas as pd
 import pytest
 
 from baselines.random_walk import GBMParams, simulate_gbm
+import events.hawkes as hawkes_module
 from events.hawkes import (
     HawkesFitResult,
     _neg_log_likelihood,
     _recursive_sum,
     branching_ratio,
     fit_hawkes_exponential,
+    fit_hawkes_exponential_multistart,
     simulate_hawkes,
 )
 from events.price_events import bar_threshold_events, event_times_array
@@ -81,6 +83,69 @@ class TestFitHawkesExponential:
         sparse_events = np.cumsum(np.full(200, 480.0))  # regular 480s gaps, like real SPY bar-proxy events
         ratios = [branching_ratio(fit_hawkes_exponential(sparse_events, alpha0=a0)) for a0 in [0.1, 0.5, 1.0, 2.0]]
         assert max(ratios) - min(ratios) < 0.01
+
+
+class TestFitHawkesExponentialMultistart:
+    """Regression coverage for a real finding: refitting the same real
+    SPY tick-level event set from different alpha0 starting points landed
+    on branching ratios ranging from ~0.03 to >1.6, each individually
+    reporting converged=True -- see
+    diagnostics/2026-08-11-real-tick-hawkes-replication/findings.md. This
+    picks the highest-log-likelihood fit across a grid of starts instead
+    of trusting whichever one the caller's single default happened to find.
+    """
+
+    def test_picks_the_highest_loglik_among_starts(self, monkeypatch):
+        # Fake fit_hawkes_exponential: returns a result whose loglik
+        # depends deterministically on alpha0, so the "best" one is known.
+        fake_results = {
+            0.1: HawkesFitResult(mu=0.1, alpha=0.05, beta=1.0, loglik=-100.0, converged=True, n_events=10),
+            0.5: HawkesFitResult(mu=0.1, alpha=0.40, beta=1.0, loglik=-50.0, converged=True, n_events=10),
+            0.9: HawkesFitResult(mu=0.1, alpha=0.95, beta=1.0, loglik=-80.0, converged=True, n_events=10),
+        }
+
+        def fake_fit(event_times, mu0=None, alpha0=0.5, beta0=None, T=None):
+            return fake_results[alpha0]
+
+        monkeypatch.setattr(hawkes_module, "fit_hawkes_exponential", fake_fit)
+        best = fit_hawkes_exponential_multistart(np.array([0.0, 1.0, 2.0]), alpha0_grid=(0.1, 0.5, 0.9))
+        assert best.alpha == 0.40  # the alpha0=0.5 fit, highest loglik (-50.0)
+
+    def test_ignores_non_converged_fits_when_a_converged_one_exists(self, monkeypatch):
+        fake_results = {
+            0.1: HawkesFitResult(mu=0.1, alpha=0.05, beta=1.0, loglik=-10.0, converged=False, n_events=10),
+            0.5: HawkesFitResult(mu=0.1, alpha=0.40, beta=1.0, loglik=-50.0, converged=True, n_events=10),
+        }
+
+        def fake_fit(event_times, mu0=None, alpha0=0.5, beta0=None, T=None):
+            return fake_results[alpha0]
+
+        monkeypatch.setattr(hawkes_module, "fit_hawkes_exponential", fake_fit)
+        best = fit_hawkes_exponential_multistart(np.array([0.0, 1.0, 2.0]), alpha0_grid=(0.1, 0.5))
+        # Higher loglik (-10.0) belongs to the non-converged fit -- must not be picked.
+        assert best.alpha == 0.40
+
+    def test_falls_back_to_best_available_if_none_converged(self, monkeypatch):
+        fake_results = {
+            0.1: HawkesFitResult(mu=0.1, alpha=0.05, beta=1.0, loglik=-10.0, converged=False, n_events=10),
+            0.5: HawkesFitResult(mu=0.1, alpha=0.40, beta=1.0, loglik=-50.0, converged=False, n_events=10),
+        }
+
+        def fake_fit(event_times, mu0=None, alpha0=0.5, beta0=None, T=None):
+            return fake_results[alpha0]
+
+        monkeypatch.setattr(hawkes_module, "fit_hawkes_exponential", fake_fit)
+        best = fit_hawkes_exponential_multistart(np.array([0.0, 1.0, 2.0]), alpha0_grid=(0.1, 0.5))
+        assert best.alpha == 0.05  # best of a bad lot, doesn't crash
+
+    def test_agrees_with_single_start_on_well_identified_data(self):
+        # Sanity check on real (non-mocked) data: for a well-behaved
+        # likelihood surface, multistart should land at the same place a
+        # single default-start fit does.
+        events = simulate_hawkes(mu=0.05, alpha=0.4, beta=1.0, T=3000, seed=1)
+        single = fit_hawkes_exponential(events)
+        multi = fit_hawkes_exponential_multistart(events)
+        assert branching_ratio(multi) == pytest.approx(branching_ratio(single), abs=0.01)
 
 
 class TestSimulateHawkes:
