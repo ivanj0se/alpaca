@@ -36,4 +36,4 @@ markers = [
 addopts = "-m 'not live'"
 
 [tool.setuptools.packages.find]
-include = ["ingest*", "features*", "events*", "rpca*", "models*", "baselines*", "benchmark*", "attribution*"]
+include = ["ingest*", "features*", "events*", "rpca*", "models*", "baselines*", "benchmark*", "attribution*", "generators*"]
