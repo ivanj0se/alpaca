@@ -54,6 +54,25 @@ class TestBarThresholdEvents:
         events = bar_threshold_events(df, sigma_threshold=3.0)
         assert set(events["ticker"]) >= {"AAPL", "MSFT"}
 
+    def test_session_boundary_jump_is_not_flagged(self):
+        # A planted jump exactly at a session boundary (day 1 close -> day
+        # 2 open) should never register as an "event" -- it's excluded
+        # before the z-score is even computed, not merely a candidate that
+        # might fail the threshold. See
+        # diagnostics/2026-08-11-session-boundary-returns/findings.md.
+        rng = np.random.default_rng(4)
+        day1 = pd.date_range("2026-01-02 09:30", periods=10, freq="1min", tz="America/New_York")
+        day2 = pd.date_range("2026-01-05 09:30", periods=10, freq="1min", tz="America/New_York")
+        idx = day1.append(day2).tz_convert("UTC")
+        closes_day1 = 100 * np.exp(np.cumsum(rng.normal(0, 0.0005, 10)))
+        closes_day2 = closes_day1[-1] * 1.5 * np.exp(np.cumsum(rng.normal(0, 0.0005, 10)))  # 50% overnight jump
+        closes = np.concatenate([closes_day1, closes_day2])
+        df = pd.DataFrame(
+            {"timestamp": idx, "ticker": "AAPL", "open": closes, "high": closes, "low": closes, "close": closes, "volume": 100}
+        )
+        events = bar_threshold_events(df, sigma_threshold=2.0)
+        assert day2[0].tz_convert("UTC") not in set(events["timestamp"])
+
 
 class TestTickEventsFromRecorder:
     def test_flags_large_price_jumps(self):

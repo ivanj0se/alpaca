@@ -36,3 +36,12 @@ class TestLogReturnsFromBars:
         assert len(returns) == 3
         assert returns.index.is_monotonic_increasing
         assert returns.iloc[0] == pytest.approx(np.log(101.0 / 100.0))
+
+    def test_excludes_session_boundary_return(self):
+        day1 = pd.date_range("2026-01-02 09:30", periods=2, freq="1min", tz="America/New_York")
+        day2 = pd.date_range("2026-01-05 09:30", periods=2, freq="1min", tz="America/New_York")
+        idx = day1.append(day2).tz_convert("UTC")
+        bars = pd.DataFrame({"timestamp": idx, "close": [100.0, 100.1, 150.0, 150.1]})  # planted jump at boundary
+        returns = log_returns_from_bars(bars)
+        assert returns.isna().sum() == 1
+        assert pd.isna(returns.loc[day2[0].tz_convert("UTC")])

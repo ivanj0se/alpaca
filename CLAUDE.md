@@ -27,17 +27,25 @@ docs/architecture.md for the two-lane design and why it's split that way.
 
 **Read `diagnostics/` before touching the math-heavy modules** (events/hawkes.py,
 baselines/garch.py, rpca/inexact_alm.py, models/score.py,
-attribution/null_control.py). Every one of them had at least one real,
-non-obvious bug caught only by running against real data, not by unit
-tests alone -- e.g. an MLE optimizer that reported `converged=True` after
-making zero real progress (bad initial-guess scaling), a walk-forward
-evaluator that made a good model look worse than a naive baseline (static
-vs. one-step-ahead forecasting), a "2000 random permutations" significance
-test that was silently a no-op (permuting a fixed set among itself changes
-nothing), and an NLL comparison that wasn't apples-to-apples across
-differently-scaled targets. The fixes are in the code; the diagnostics
-entries explain *why*, which matters if you're adding a new rung or metric
-and want to avoid repeating the same class of mistake.
+attribution/null_control.py, features/returns.py, events/price_events.py).
+Every one of them had at least one real, non-obvious bug caught only by
+running against real data, not by unit tests alone -- e.g. an MLE
+optimizer that reported `converged=True` after making zero real progress
+(bad initial-guess scaling), a walk-forward evaluator that made a good
+model look worse than a naive baseline (static vs. one-step-ahead
+forecasting), a "2000 random permutations" significance test that was
+silently a no-op (permuting a fixed set among itself changes nothing), an
+NLL comparison that wasn't apples-to-apples across differently-scaled
+targets, and every return-series computation in the codebase diffing
+straight across session boundaries (overnight/weekend/holiday gaps
+computed as ordinary 1-minute returns, confirmed 4.4x larger on average
+than genuine intraday moves on real data -- see
+diagnostics/2026-08-11-session-boundary-returns/). The fixes are in the
+code; the diagnostics entries explain *why*, which matters if you're
+adding a new rung or metric and want to avoid repeating the same class of
+mistake -- in particular, any new return computation should go through
+`features/returns.py::session_boundary_mask` rather than reimplementing a
+naive `np.diff(np.log(close))`.
 
 ## Git
 

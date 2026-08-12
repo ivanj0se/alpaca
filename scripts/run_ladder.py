@@ -30,7 +30,7 @@ from benchmark.cv import make_t1
 from benchmark.ladder import evaluate_rung, gate_check
 from events.hawkes import branching_ratio, fit_hawkes_exponential
 from events.price_events import bar_threshold_events, event_times_array, tick_events_from_recorder
-from features.returns import build_feature_frame
+from features.returns import build_feature_frame, log_returns, session_boundary_mask
 from features.windows import make_windows
 from ingest.gdelt_client import download_gdelt_range, filter_events_for_universe, parse_gdelt_range
 from ingest.storage import read_bars, read_ticks
@@ -50,9 +50,19 @@ def load_config(universe_path: Path, settings_path: Path) -> tuple[dict, dict]:
 
 
 def log_returns_from_bars(bars: pd.DataFrame) -> pd.Series:
+    """Session-boundary returns are excluded (NaN'd), not computed as a
+    normal 1-minute return -- see
+    features.returns.session_boundary_mask and
+    diagnostics/2026-08-11-session-boundary-returns/findings.md. Matters
+    here too: an un-excluded overnight/weekend jump shared across many
+    tickers on the same calendar boundary would show up as a spurious
+    "common" (low-rank) move in Rung 3's cross-sectional RPCA decomposition.
+    """
     g = bars.sort_values("timestamp")
-    r = np.diff(np.log(g["close"].to_numpy()))
-    return pd.Series(r, index=g["timestamp"].iloc[1:])
+    close = g.set_index("timestamp")["close"]
+    r = log_returns(close)
+    boundary = session_boundary_mask(close.index).loc[r.index]
+    return r.mask(boundary)
 
 
 # --------------------------------------------------------------------------
@@ -169,11 +179,19 @@ def run_cross_sectional_lane(tickers: list[str], data_dir: Path, settings: dict)
     for r in returns_by_ticker.values():
         common_idx = common_idx.intersection(r.index)
     common_idx = common_idx.sort_values()
-    if len(common_idx) < 100:
-        return None
 
     spy_aligned = spy_returns.loc[common_idx]
     feature_matrix = pd.DataFrame({t: r.loc[common_idx] for t, r in returns_by_ticker.items()})
+    # log_returns_from_bars NaNs out session-boundary returns (see its
+    # docstring) -- drop those rows rather than feed NaN into RPCA's SVD.
+    # A boundary shared across the whole market (e.g. Monday's open) would
+    # otherwise NaN nearly every column on the same row.
+    valid = feature_matrix.notna().all(axis=1) & spy_aligned.notna()
+    common_idx = common_idx[valid.to_numpy()]
+    spy_aligned = spy_aligned.loc[common_idx]
+    feature_matrix = feature_matrix.loc[common_idx]
+    if len(common_idx) < 100:
+        return None
 
     embargo = pd.Timedelta(minutes=settings["cv"]["embargo_minutes"])
     n_splits = settings["cv"]["n_splits"]
