@@ -35,3 +35,40 @@ attribution:
   target_null_rate: 0.2      # per-ticker match_window is calibrated so a random timestamp matches ~this often -- see attribution/null_control.py::calibrate_match_window. Fixes real saturation seen at 30min flat on high-coverage tickers (WMT/GS/JPM/BA/CVX ~100% real AND null match rate -- zero power to distinguish signal from noise)
   n_permutations: 2000
   sidak_alpha: 0.05
+
+# Market-generator comparison suite (see /Users/ivanpaiewonsky/.claude/plans/fuzzy-prancing-meteor.md).
+# A separate initiative from the ladder above: generates synthetic price
+# paths and scores them against real markets' "stylized facts" rather than
+# scoring predictive NLL.
+generators:
+  hawkes_jump_diffusion:
+    ticker: SPY
+    sigma_threshold: 2.0        # matches events/price_events.py's existing convention
+    T_days: 5.0
+    bar_seconds: 60.0
+    n_sims: 25
+    max_events: 200000          # defensive cap -- see generators/hawkes_jump_diffusion.py::simulate_hawkes_bounded
+    seed: 0
+  tcn_forecaster:
+    window_len: 45              # receptive field is 31 steps at dilations=(1,2,4,8); keep comfortably above it
+    hidden_dim: 16
+    dilations: [1, 2, 4, 8]
+    epochs: 30
+    batch_size: 32
+    lr: 0.001
+    patience: 5
+    n_sims: 25
+    n_steps: 1950                # ~5 trading days of 1-min bars, matches the Hawkes arm's T_days for a fair comparison
+    vol_window: 15
+    seed: 0
+
+stylized_facts:
+  max_lag: 50
+  leverage_max_lag: 20
+  agg_scales: [1, 5, 15, 30]
+
+conformal:
+  alpha: 0.10
+  n_bootstrap: 300
+  block_size: 90               # minutes -- tuned against real |return| ACF decay, see diagnostics/2026-08-12-stylized-facts-module-validation/
+  seed: 0

@@ -1,9 +1,11 @@
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 
-from models.forecaster_generate import ancestral_sample
+from models.forecaster_generate import ancestral_sample, generate_forecaster_paths
 from models.tcn_forecaster import TCNForecaster
+from ingest.storage import write_bars
 
 
 class TestAncestralSample:
@@ -66,3 +68,43 @@ class TestAncestralSample:
         # not stuck near the seed's initial zero vol.
         late_returns = result_vol_track[30:]
         assert 0.02 < late_returns.std() < 0.06
+
+
+class TestGenerateForecasterPaths:
+    def test_raises_when_no_data(self, tmp_path):
+        with pytest.raises(ValueError, match="no real bar data"):
+            generate_forecaster_paths(tmp_path, ticker="SPY", epochs=1, n_sims=1, n_steps=5)
+
+    def test_end_to_end_on_synthetic_data(self, tmp_path):
+        idx = pd.date_range("2026-01-02 09:30", periods=1000, freq="1min", tz="UTC")
+        rng = np.random.default_rng(0)
+        closes = 100 * np.exp(np.cumsum(rng.normal(0, 0.0005, 1000)))
+        volumes = rng.integers(50, 500, 1000).astype(float)
+        bars = pd.DataFrame(
+            {"timestamp": idx, "ticker": "SPY", "open": closes, "high": closes, "low": closes, "close": closes, "volume": volumes}
+        )
+        write_bars(bars, tmp_path)
+
+        paths = generate_forecaster_paths(
+            tmp_path, ticker="SPY", window_len=20, hidden_dim=8, dilations=(1, 2),
+            epochs=2, n_sims=3, n_steps=10, vol_window=5, seed=0,
+        )
+        assert len(paths) == 3
+        for p in paths:
+            assert p.generator_id == "tcn_forecaster"
+            assert len(p.log_returns) == 10
+
+    def test_raises_when_not_enough_windows(self, tmp_path):
+        # Enough rows for make_windows to succeed (past its own too-few-rows
+        # check), but few enough resulting windows to trigger this
+        # function's own "not enough to train on" guard.
+        idx = pd.date_range("2026-01-02 09:30", periods=100, freq="1min", tz="UTC")
+        rng = np.random.default_rng(0)
+        closes = 100 * np.exp(np.cumsum(rng.normal(0, 0.0005, 100)))
+        volumes = rng.integers(50, 500, 100).astype(float)
+        bars = pd.DataFrame(
+            {"timestamp": idx, "ticker": "SPY", "open": closes, "high": closes, "low": closes, "close": closes, "volume": volumes}
+        )
+        write_bars(bars, tmp_path)
+        with pytest.raises(ValueError, match="not enough"):
+            generate_forecaster_paths(tmp_path, ticker="SPY", window_len=20, epochs=1, n_sims=1, n_steps=5)

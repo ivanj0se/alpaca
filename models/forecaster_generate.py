@@ -15,9 +15,16 @@ length -- see diagnostics/2026-08-12-tcn-forecaster-generative/.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import torch
 
+from features.returns import build_feature_frame
+from features.windows import make_windows
+from generators.path import GeneratedPath
+from ingest.storage import read_bars
+from models.forecaster_train import ForecasterTrainConfig, train
 from models.tcn_forecaster import TCNForecaster
 
 
@@ -63,3 +70,63 @@ def ancestral_sample(
         buffer = np.concatenate([buffer[1:], np.array([[next_return, next_vol]])], axis=0)
 
     return generated
+
+
+def generate_forecaster_paths(
+    data_dir: Path,
+    ticker: str = "SPY",
+    window_len: int = 45,
+    hidden_dim: int = 16,
+    dilations: tuple[int, ...] = (1, 2, 4, 8),
+    epochs: int = 30,
+    batch_size: int = 32,
+    lr: float = 1e-3,
+    patience: int = 5,
+    n_sims: int = 25,
+    n_steps: int = 1950,
+    vol_window: int = 15,
+    seed: int = 0,
+) -> list[GeneratedPath]:
+    """End-to-end: reads real bars, trains a fresh TCNForecaster (2
+    features: log_return, realized_vol -- deliberately dropping
+    volume_zscore, see models/tcn_forecaster.py's docstring), then
+    generates `n_sims` independent ancestral-sampling realizations from a
+    real seed window. Mirrors
+    generators/hawkes_jump_diffusion.py::generate_ablation_paths's
+    end-to-end shape so scripts/run_generator_comparison.py can call every
+    generator arm the same way.
+    """
+    bars = read_bars(data_dir, tickers=[ticker])
+    if bars.empty:
+        raise ValueError(f"no real bar data for {ticker} in {data_dir}")
+    frame = build_feature_frame(bars, vol_window=vol_window, volume_window=vol_window)
+    two_feature_frame = frame[["log_return", "realized_vol"]]
+
+    windows, _ = make_windows(two_feature_frame, window_len=window_len, stride=5)
+    if len(windows) < 20:
+        raise ValueError(f"only {len(windows)} training windows for {ticker} -- not enough to train on")
+
+    n_val = max(1, int(len(windows) * 0.15))
+    train_windows, val_windows = windows[:-n_val], windows[-n_val:]
+
+    config = ForecasterTrainConfig(epochs=epochs, batch_size=batch_size, lr=lr, patience=patience, seed=seed)
+    model_config = TCNForecaster(n_features=2, hidden_dim=hidden_dim, dilations=dilations)
+    result = train(train_windows, val_windows=val_windows, config=config, model=model_config)
+    model = result.model
+    model.eval()
+
+    seed_window = windows[len(windows) // 2]  # a representative real window, not the very last (avoid edge effects)
+    rng = np.random.default_rng(seed)
+    paths = []
+    for _ in range(n_sims):
+        sim_seed = int(rng.integers(0, 2**32 - 1))
+        generated = ancestral_sample(model, seed_window, n_steps=n_steps, vol_window=vol_window, seed=sim_seed)
+        paths.append(
+            GeneratedPath(
+                generator_id="tcn_forecaster",
+                log_returns=generated,
+                seed=sim_seed,
+                params={"window_len": window_len, "n_steps": n_steps, "best_epoch": result.best_epoch},
+            )
+        )
+    return paths
