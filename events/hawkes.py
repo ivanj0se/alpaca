@@ -124,11 +124,12 @@ def fit_hawkes_exponential(
 
 def fit_hawkes_exponential_multistart(
     event_times: np.ndarray,
-    alpha0_grid: tuple[float, ...] = (0.1, 0.5, 0.9, 2.0),
+    alpha0_grid: tuple[float, ...] = (0.02, 0.05, 0.1, 0.3, 0.7, 1.5, 3.0, 7.0, 15.0),
     T: float | None = None,
 ) -> HawkesFitResult:
-    """Refits from several `alpha0` starting points and keeps the one with
-    the highest achieved log-likelihood among converged fits.
+    """Refits from several `alpha0` starting points (beta0 left at its
+    data-adaptive default for each) and keeps the one with the highest
+    achieved log-likelihood among converged fits.
 
     Exists because the L-BFGS-B likelihood surface for this model is not
     always well-conditioned enough for a single default start to be
@@ -137,13 +138,24 @@ def fit_hawkes_exponential_multistart(
     refitting the same event set from different `alpha0` starting points
     landed on branching-ratio estimates ranging from ~0.03 to >1.6 for
     several moderate-density event definitions, each individually
-    reporting `converged=True`. The earlier
-    diagnostics/2026-08-11-hawkes-optimizer-initialization-bug/ fix (a
-    data-adaptive `beta0`) made the *sparse* bar-proxy case robust to this,
-    but doesn't guarantee a well-conditioned surface at every event
-    density -- this is the general-purpose hardening `fit_hawkes_exponential`
-    itself doesn't attempt (it fits once, from whatever `alpha0` the caller
-    picked). Falls back to whichever fit is available if none converged.
+    reporting `converged=True`.
+
+    The first version of this function used only 4 points (0.1, 0.5, 0.9,
+    2.0) -- not wide enough. Confirmed the hard way
+    (diagnostics/2026-08-11-sip-consolidated-tape-check/): on real SIP
+    tick data, all 4 of those points funneled into the SAME local optimum
+    (loglik=-127340, branching_ratio=0.7910), which looked plausible
+    enough (close to the published 0.81) to nearly get reported as a real
+    result before a wider sweep found a genuinely better optimum
+    (loglik=-125174, branching_ratio=0.9520) that the narrow grid never
+    had a chance to find. A full 2D grid also varying beta0 (55 fits)
+    confirmed 0.9520 is the true best, but took ~3.5 minutes on this
+    dataset -- too slow for routine use. This 9-point alpha0-only grid
+    (beta0 at its adaptive default each time) reproduces that same best
+    answer in ~30s: multiple different starting points converging to the
+    identical best log-likelihood is the actual evidence a result is
+    trustworthy, not agreement within an accidentally-too-narrow grid.
+    Falls back to whichever fit is available if none converged.
     """
     fits = [fit_hawkes_exponential(event_times, alpha0=a0, T=T) for a0 in alpha0_grid]
     converged = [f for f in fits if f.converged]

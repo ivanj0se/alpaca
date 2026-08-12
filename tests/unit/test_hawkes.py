@@ -147,6 +147,35 @@ class TestFitHawkesExponentialMultistart:
         multi = fit_hawkes_exponential_multistart(events)
         assert branching_ratio(multi) == pytest.approx(branching_ratio(single), abs=0.01)
 
+    def test_default_grid_is_wide_enough_to_escape_a_narrow_local_basin(self, monkeypatch):
+        # Regression for the real bug: the first version of this function
+        # used only 4 alpha0 points (0.1, 0.5, 0.9, 2.0), all of which
+        # happened to funnel into the SAME worse local optimum on real SIP
+        # data -- a genuinely better optimum existed but none of those 4
+        # points ever found it (see diagnostics/2026-08-11-sip-consolidated-tape-check/).
+        # Simulates that shape: a "trap" optimum reachable from a cluster
+        # of nearby starts, and a better optimum reachable only from
+        # points outside that old narrow grid's range.
+        old_narrow_grid = (0.1, 0.5, 0.9, 2.0)
+        trap = HawkesFitResult(mu=0.1, alpha=0.30, beta=0.40, loglik=-500.0, converged=True, n_events=100)
+        true_best = HawkesFitResult(mu=0.1, alpha=0.10, beta=0.12, loglik=-450.0, converged=True, n_events=100)
+
+        def fake_fit(event_times, mu0=None, alpha0=0.5, beta0=None, T=None):
+            return trap if alpha0 in old_narrow_grid else true_best
+
+        monkeypatch.setattr(hawkes_module, "fit_hawkes_exponential", fake_fit)
+        # Confirm the trap: the old narrow grid alone would have missed it.
+        old_result = max(
+            (fake_fit(None, alpha0=a0) for a0 in old_narrow_grid), key=lambda f: f.loglik
+        )
+        assert old_result is trap
+
+        # The current default grid must not be a subset of the old one --
+        # it needs at least one point outside it to have a chance of
+        # finding true_best.
+        best = fit_hawkes_exponential_multistart(np.array([0.0, 1.0]))
+        assert best.loglik == -450.0
+
 
 class TestSimulateHawkes:
     def test_rejects_supercritical_alpha(self):

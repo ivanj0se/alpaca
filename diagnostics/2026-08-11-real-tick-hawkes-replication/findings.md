@@ -159,19 +159,30 @@ multiple starts and taking the best log-likelihood revealed which numbers
 were real.
 
 **Fix:** added `events/hawkes.py::fit_hawkes_exponential_multistart`
-(refits from a small alpha0 grid, keeps the highest-log-likelihood
+(refits from a grid of alpha0 starting points, keeps the highest-log-likelihood
 converged result) and wired it into both the bar-proxy and real-tick
 fits in `scripts/run_ladder.py::run_rung1_hawkes` -- the trust gate should
-not be silently trusting a single arbitrary local optimum. 4 new tests in
+not be silently trusting a single arbitrary local optimum. 5 tests in
 `tests/unit/test_hawkes.py::TestFitHawkesExponentialMultistart`.
 
 **Re-ran the production sigma>=2.0 fit through the hardened multistart
 path: branching_ratio=0.9969, identical to the single-start result
 (loglik=-88229.78, the best among the grid).** The original number was
-already sitting at the true optimum for this configuration -- multistart
-doesn't change the answer here, but now actively guards against the
-instability documented above recurring silently in a future run with
-different data or thresholds.
+already sitting at the true optimum for this configuration.
+
+**Update:** the *first* version of this fix used only a 4-point alpha0
+grid (0.1, 0.5, 0.9, 2.0), which turned out not to be wide enough in
+general -- confirmed the hard way the same day when it silently returned
+a wrong (worse-loglik) branching ratio on a different real dataset (SIP
+consolidated-tape data at a different threshold), see
+diagnostics/2026-08-11-sip-consolidated-tape-check/. The grid is now 9
+points (0.02, 0.05, 0.1, 0.3, 0.7, 1.5, 3.0, 7.0, 15.0). Re-verified this
+entry's headline 0.9969 result against the wider grid specifically:
+**unchanged**, loglik=-88229.78, identical to both the narrow-grid result
+and the wide-grid result -- this particular number was never affected by
+the bug, but it hadn't been checked against the *wider* grid until that
+correction, so it's noted here for completeness rather than left as an
+unverified claim.
 
 ## Bottom line
 
