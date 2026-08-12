@@ -86,10 +86,20 @@ def backfill_trades(
     end: pd.Timestamp,
     data_dir: Path,
     chunk_days: int = 1,
+    feed: DataFeed = DataFeed.IEX,
     client=None,
 ) -> dict[str, int]:
     """Full historical tick backfill, ticker by ticker, one day per request
     by default. Returns {ticker: rows_written}.
+
+    `feed` defaults to IEX (the free tier) to match the live recorder's
+    feed -- pass `DataFeed.SIP` explicitly for the real consolidated tape
+    (confirmed accessible on this account 2026-08-11, ~30x denser than IEX
+    for SPY, see diagnostics/2026-08-11-sip-consolidated-tape-check/). Mixing
+    IEX and SIP data for the same ticker/date in the same `data_dir` is not
+    handled -- the two are structurally different samples of the same
+    trades (SIP is a superset), so always point SIP pulls at a separate
+    `data_dir` rather than the live recorder's store.
     """
     client = client or get_client()
     rows_written: dict[str, int] = {}
@@ -99,7 +109,7 @@ def backfill_trades(
         chunk_start = start
         while chunk_start < end:
             chunk_end = min(chunk_start + pd.Timedelta(days=chunk_days), end)
-            df = fetch_historical_trades(client, [ticker], chunk_start, chunk_end)
+            df = fetch_historical_trades(client, [ticker], chunk_start, chunk_end, feed=feed)
             if not df.empty:
                 total += write_ticks(df, data_dir)
             chunk_start = chunk_end
@@ -112,6 +122,7 @@ def update_incremental(
     symbols: list[str],
     data_dir: Path,
     end: pd.Timestamp | None = None,
+    feed: DataFeed = DataFeed.IEX,
     client=None,
 ) -> dict[str, int]:
     """Fetch only trades newer than the last stored tick per ticker -- safe
@@ -131,7 +142,7 @@ def update_incremental(
         if start >= end:
             rows_written[ticker] = 0
             continue
-        df = fetch_historical_trades(client, [ticker], start, end)
+        df = fetch_historical_trades(client, [ticker], start, end, feed=feed)
         rows_written[ticker] = write_ticks(df, data_dir) if not df.empty else 0
 
     return rows_written
@@ -144,17 +155,23 @@ def main() -> None:
     parser.add_argument("--start", type=str, help="e.g. 2026-06-01 (required unless --incremental)")
     parser.add_argument("--end", type=str, help="e.g. 2026-08-01 (defaults to now if --incremental)")
     parser.add_argument("--incremental", action="store_true", help="Fetch only new ticks since last stored timestamp")
+    parser.add_argument(
+        "--feed", type=str, default="iex", choices=[f.value for f in DataFeed],
+        help="Data feed; 'sip' is the real consolidated tape if your account has access -- "
+        "point --data-dir at a separate directory from the live recorder's store when using it.",
+    )
     args = parser.parse_args()
+    feed = DataFeed(args.feed)
 
     if args.incremental:
         end = pd.Timestamp(args.end, tz="UTC") if args.end else None
-        result = update_incremental(args.tickers, args.data_dir, end=end)
+        result = update_incremental(args.tickers, args.data_dir, end=end, feed=feed)
     else:
         if not args.start or not args.end:
             parser.error("--start and --end are required unless --incremental")
         start = pd.Timestamp(args.start, tz="UTC")
         end = pd.Timestamp(args.end, tz="UTC")
-        result = backfill_trades(args.tickers, start, end, args.data_dir)
+        result = backfill_trades(args.tickers, start, end, args.data_dir, feed=feed)
 
     for ticker, n in result.items():
         print(f"{ticker}: {n} rows written")

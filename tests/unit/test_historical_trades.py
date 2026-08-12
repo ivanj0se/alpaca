@@ -1,4 +1,5 @@
 import pandas as pd
+from alpaca.data.enums import DataFeed
 
 from ingest.historical_trades import backfill_trades, fetch_historical_trades, trades_to_frame, update_incremental
 from ingest.storage import read_ticks, write_ticks
@@ -37,6 +38,7 @@ class _FakeClient:
                 if pd.Timestamp(request.start).tz is None
                 else pd.Timestamp(request.start),
                 "end": pd.Timestamp(request.end),
+                "feed": request.feed,
             }
         )
         symbol = request.symbol_or_symbols[0]
@@ -105,6 +107,27 @@ class TestBackfillTrades:
         )
         spy_calls = [c for c in client.calls if c["symbols"] == ["SPY"]]
         assert len(spy_calls) == 3  # 3 calendar days, chunk_days=1
+
+    def test_defaults_to_iex_feed(self, tmp_path):
+        data_dir = tmp_path / "data"
+        client = _FakeClient()
+        backfill_trades(
+            ["SPY"], pd.Timestamp("2026-01-02", tz="UTC"), pd.Timestamp("2026-01-03", tz="UTC"), data_dir, client=client
+        )
+        assert client.calls[0]["feed"] == DataFeed.IEX
+
+    def test_passes_through_explicit_feed(self, tmp_path):
+        data_dir = tmp_path / "data"
+        client = _FakeClient()
+        backfill_trades(
+            ["SPY"],
+            pd.Timestamp("2026-01-02", tz="UTC"),
+            pd.Timestamp("2026-01-03", tz="UTC"),
+            data_dir,
+            feed=DataFeed.SIP,
+            client=client,
+        )
+        assert client.calls[0]["feed"] == DataFeed.SIP
 
 
 class TestUpdateIncremental:
