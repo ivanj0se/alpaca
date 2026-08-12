@@ -100,6 +100,39 @@ class TestTicksRoundTrip:
         out = read_ticks(tmp_path)
         assert len(out) == len(df)
 
+    def test_write_is_idempotent_no_duplicates(self, tmp_path):
+        df = _ticks_df()
+        write_ticks(df, tmp_path)
+        write_ticks(df, tmp_path)  # re-run, e.g. an overlapping incremental fetch
+        out = read_ticks(tmp_path)
+        assert len(out) == len(df)
+
+    def test_distinct_trades_sharing_a_timestamp_are_both_kept(self, tmp_path):
+        # Regression for a real bug: two DIFFERENT real trades can share a
+        # timestamp down to the microsecond (a burst -- one order sweeping
+        # several resting orders). De-duplicating on timestamp alone
+        # silently discarded one of them whenever a write merged with an
+        # existing partition file. See
+        # diagnostics/2026-08-11-tick-dedup-key-bug/findings.md.
+        ts = pd.Timestamp("2026-01-02 09:30:05.123456", tz="UTC")
+        first = pd.DataFrame({"timestamp": [ts], "ticker": ["AAPL"], "price": [100.0], "size": [10]})
+        second = pd.DataFrame({"timestamp": [ts], "ticker": ["AAPL"], "price": [100.05], "size": [25]})
+        write_ticks(first, tmp_path)
+        write_ticks(second, tmp_path)  # merges with the existing partition file
+        out = read_ticks(tmp_path)
+        assert len(out) == 2
+        assert set(out["price"]) == {100.0, 100.05}
+
+    def test_exact_duplicate_row_is_still_collapsed(self, tmp_path):
+        # The legitimate case full-row dedup must still catch: the same
+        # trade re-fetched (e.g. an overlapping incremental window).
+        ts = pd.Timestamp("2026-01-02 09:30:05.123456", tz="UTC")
+        row = pd.DataFrame({"timestamp": [ts], "ticker": ["AAPL"], "price": [100.0], "size": [10]})
+        write_ticks(row, tmp_path)
+        write_ticks(row.copy(), tmp_path)
+        out = read_ticks(tmp_path)
+        assert len(out) == 1
+
 
 class TestLatestTimestamp:
     def test_none_when_no_data(self, tmp_path):

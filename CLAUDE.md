@@ -15,20 +15,27 @@ docs/architecture.md for the two-lane design and why it's split that way.
 - `data/` has ~90 days of real minute bars backfilled for the full
   universe + SPY (`python -m ingest.historical_bars --start ... --end ...`
   to extend/refresh).
-- `ingest/tick_recorder.py` runs continuously via launchd (see below) --
-  real tick data accumulates automatically now, needed for the Rung 1
-  real-tick replication test, which is gated/skipped until enough exists.
+- `ingest/tick_recorder.py` runs continuously via launchd (see below),
+  recording real live ticks. Real tick-level history can *also* be
+  backfilled directly via `python -m ingest.historical_trades --tickers
+  SPY --start ... --end ...` (Alpaca's free IEX feed has at least a year
+  of real historical trade-level data, not just bars -- confirmed
+  2026-08-11, see diagnostics/2026-08-11-real-tick-hawkes-replication/).
+  Both write into the same `data/ticks` store with an identical schema.
+  The Rung 1 real-tick gate (`>=5000 ticks over >=5 days`) is unblocked as
+  of 2026-08-11 (489,575 real SPY ticks over 29.3 days backfilled) --
+  first real result: branching_ratio=0.9969, outside the configured
+  plausible_band, an open methodological question, not yet resolved (see
+  that diagnostics entry).
 - `scripts/run_ladder.py` runs the full ladder end-to-end on real data and
   writes a dated report to `diagnostics/<date>-full-ladder-run/report.md`.
-  Last full run (all ~20 tickers, 15 epochs, 3-day news window) was kicked
-  off 2026-08-11; check that report for the latest real numbers before
-  assuming anything here is current -- rerun periodically as more data
-  (especially real ticks) accumulates.
+  Check that report for the latest real numbers before assuming anything
+  here is current -- rerun periodically as more data accumulates.
 
 **Read `diagnostics/` before touching the math-heavy modules** (events/hawkes.py,
 baselines/garch.py, rpca/inexact_alm.py, models/score.py,
-attribution/null_control.py, features/returns.py, events/price_events.py).
-Every one of them had at least one real, non-obvious bug caught only by
+attribution/null_control.py, features/returns.py, events/price_events.py,
+ingest/storage.py). Every one of them had at least one real, non-obvious bug caught only by
 running against real data, not by unit tests alone -- e.g. an MLE
 optimizer that reported `converged=True` after making zero real progress
 (bad initial-guess scaling), a walk-forward evaluator that made a good

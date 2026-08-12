@@ -39,9 +39,28 @@ def _partition_path(data_dir: Path, kind: str, ticker: str, date: pd.Timestamp) 
 
 def _write_partitioned(df: pd.DataFrame, data_dir: Path, kind: str, required: list[str]) -> int:
     """Write df to per-ticker/per-day partitions. Merges with any existing
-    partition file and de-duplicates on timestamp, so this is safe to call
-    repeatedly (backfill re-runs, live recorder flush cycles) without
-    creating duplicate rows. Returns the number of rows written.
+    partition file and de-duplicates on full-row equality, so this is safe
+    to call repeatedly (backfill re-runs, live recorder flush cycles)
+    without creating duplicate rows. Returns the number of rows written.
+
+    De-duplicating on `timestamp` alone (an earlier version of this
+    function) is correct for bars (one bar per ticker per minute, by
+    construction) but wrong for ticks: real trades legitimately share a
+    timestamp down to the microsecond during a burst (e.g. one incoming
+    order sweeping several resting orders produces multiple separate trade
+    prints, often in the same tick of the matching engine) -- confirmed on
+    real SPY data, ~4% of stored ticks were involved in a timestamp
+    collision with a *different* price/size, i.e. a real distinct trade,
+    not a duplicate write. `drop_duplicates(subset="timestamp")` was
+    silently discarding one side of every such pair whenever a write
+    merged with an existing partition file (the common case for the live
+    recorder's repeated same-day flushes) -- exactly the kind of clustered
+    activity a Hawkes fit is trying to characterize, so this was quietly
+    suppressing the project's own signal of interest. See
+    diagnostics/2026-08-11-tick-dedup-key-bug/findings.md. Full-row
+    equality still correctly collapses genuine duplicates (the same trade
+    re-fetched by an overlapping incremental window, or the same flush
+    written twice).
     """
     _validate_schema(df, required, kind)
     data_dir = Path(data_dir)
@@ -58,9 +77,9 @@ def _write_partitioned(df: pd.DataFrame, data_dir: Path, kind: str, required: li
         if path.exists():
             existing = pd.read_parquet(path)
             combined = pd.concat([existing, group], ignore_index=True)
-            combined = combined.drop_duplicates(subset="timestamp").sort_values("timestamp")
         else:
             combined = group
+        combined = combined.drop_duplicates().sort_values("timestamp")
 
         combined.to_parquet(path, index=False)
         rows_written += len(group)
