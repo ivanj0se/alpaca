@@ -64,6 +64,66 @@ class TestOrderStatisticThreshold:
         assert _order_statistic_threshold(distances, alpha=0.01) == 5.0
 
 
+class TestCalibrateBandResampleLength:
+    """Regression coverage for a real bug: calibrate_band defaulted
+    resample_length to len(reference), so bands calibrated against a long
+    reference silently rejected much shorter candidates (real or
+    synthetic) purely from sampling-variance mismatch, not because they
+    were actually unrealistic. See
+    diagnostics/2026-08-13-conformal-band-length-mismatch/findings.md --
+    confirmed on real SPY data: genuine ~2,000-point subsamples of the
+    real reference series failed a same-length-mismatched band on two
+    facts at a 0/20 rate, matching the failure rate of every generator
+    tested, including one that was otherwise clearly working.
+    """
+
+    def test_band_calibrated_at_reference_length_rejects_real_shorter_samples(self):
+        rng = np.random.default_rng(0)
+        reference = rng.normal(0, 1, 20000)
+        short_length = 500
+
+        # The bug: resample_length not passed, defaults to len(reference)=20000.
+        wrong_band = calibrate_band(
+            reference, stat_fn=np.std, distance_fn=lambda a, b: abs(a - b), alpha=0.1, n_bootstrap=200, block_size=50, seed=1
+        )
+        # The fix: resample_length matches what will actually be scored.
+        right_band = calibrate_band(
+            reference,
+            stat_fn=np.std,
+            distance_fn=lambda a, b: abs(a - b),
+            alpha=0.1,
+            n_bootstrap=200,
+            block_size=50,
+            resample_length=short_length,
+            seed=1,
+        )
+
+        # Score real, genuinely-real contiguous short subsamples of the
+        # SAME reference against both bands.
+        starts = range(0, len(reference) - short_length, 500)
+        wrong_coverage = np.mean(
+            [abs(np.std(reference[s : s + short_length]) - np.std(reference)) <= wrong_band.threshold for s in starts]
+        )
+        right_coverage = np.mean(
+            [abs(np.std(reference[s : s + short_length]) - np.std(reference)) <= right_band.threshold for s in starts]
+        )
+
+        assert right_coverage > wrong_coverage
+        assert right_coverage > 0.7  # roughly recovers the target 1-alpha=0.9
+
+    def test_resample_length_defaults_to_reference_length_for_backward_compatibility(self):
+        rng = np.random.default_rng(0)
+        reference = rng.normal(0, 1, 500)
+        explicit = calibrate_band(
+            reference, stat_fn=np.mean, distance_fn=lambda a, b: abs(a - b), alpha=0.1, n_bootstrap=30, block_size=20,
+            resample_length=len(reference), seed=5,
+        )
+        default = calibrate_band(
+            reference, stat_fn=np.mean, distance_fn=lambda a, b: abs(a - b), alpha=0.1, n_bootstrap=30, block_size=20, seed=5
+        )
+        assert np.array_equal(explicit.null_distances, default.null_distances)
+
+
 class TestCalibrateBand:
     def test_returns_conformal_band_with_reference_stat(self):
         rng = np.random.default_rng(0)

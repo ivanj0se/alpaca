@@ -72,20 +72,40 @@ of `benchmark/ladder.py`). Run via
 `python -m scripts.run_generator_comparison --ticker SPY`, writes
 `diagnostics/<date>-generator-comparison/report.md`.
 
-**Result as of 2026-08-12**: Hawkes self-excitation (real, live-refit
-branching_ratio) is the only mechanism among everything tested that
-produces measurably realistic market dynamics -- overall_score=0.168 vs.
-0.000 for the zero-self-excitation control, GBM null, zero-intelligence
-agents, and the TCN-forecaster alike. Two real bugs were caught building
-this: the Hawkes optimizer's multistart grid was too narrow (silently
-returned a wrong branching ratio that looked plausible -- see
-`diagnostics/2026-08-11-sip-consolidated-tape-check/`'s CORRECTION
-section) and `TCNForecaster`'s logvar clamp was blindly copied from
-`TCNVAE` at the wrong scale (~140x too large -- see
-`diagnostics/2026-08-12-tcn-forecaster-generative/`). Read those two
-diagnostics entries before touching `events/hawkes.py::fit_hawkes_exponential_multistart`
-or `models/tcn_forecaster.py` for the same reason as the modules listed
-above.
+**Result as of 2026-08-13** (corrected -- see below):
+Hawkes self-excitation (real, live-refit branching_ratio) is the only
+mechanism among everything tested that produces measurably realistic
+market dynamics -- overall_score=0.896 vs. 0.400 for the
+zero-self-excitation control, GBM null, zero-intelligence agents, and the
+TCN-forecaster alike (all four fail every fact with real discriminating
+power at this sample length -- volatility clustering, excess kurtosis,
+aggregational kurtosis -- while trivially passing two facts,
+raw_return_acf and leverage_curve, that turn out to have low
+discriminating power for anyone at this length).
+
+Three real bugs were caught building this, all worth reading before
+touching the relevant module:
+1. The Hawkes optimizer's multistart grid was too narrow (silently
+   returned a wrong branching ratio that looked plausible -- see
+   `diagnostics/2026-08-11-sip-consolidated-tape-check/`'s CORRECTION
+   section) -- read before touching
+   `events/hawkes.py::fit_hawkes_exponential_multistart`.
+2. `TCNForecaster`'s logvar clamp was blindly copied from `TCNVAE` at the
+   wrong scale (~140x too large -- see
+   `diagnostics/2026-08-12-tcn-forecaster-generative/`) -- read before
+   touching `models/tcn_forecaster.py`.
+3. The comparison harness itself calibrated confidence bands against the
+   reference data's full length (~23,000 points) but scored much shorter
+   generator paths (~1,950 points) against them -- silently rejecting
+   everything, real or synthetic, from the sample-size mismatch alone,
+   not genuine unrealism. Found because Ivan asked "check if the code is
+   complete or if there exists bugs" after noticing suspiciously uniform
+   0.000 scores across structurally unrelated generators -- see
+   `diagnostics/2026-08-13-conformal-band-length-mismatch/`. Read before
+   touching `benchmark/conformal.py::calibrate_band` or
+   `benchmark/generator_ladder.py::calibrate_reference_bands` --
+   `resample_length`/`path_length` must always match whatever will
+   actually be scored against the calibrated band.
 
 ## Git
 

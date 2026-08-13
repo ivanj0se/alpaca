@@ -33,6 +33,7 @@ class GeneratorResult:
 
 def calibrate_reference_bands(
     reference_returns: np.ndarray,
+    path_length: int,
     alpha: float = 0.10,
     n_bootstrap: int = 300,
     block_size: int = 90,
@@ -43,9 +44,21 @@ def calibrate_reference_bands(
 ) -> tuple[dict[str, ConformalBand], StylizedFactsSummary]:
     """One-time, real-data-only calibration step: for each stylized fact,
     learn how much it naturally varies across block-bootstrap resamples of
-    `reference_returns` against itself (no generator involved). Returns
-    the per-fact bands plus the reference's own StylizedFactsSummary
-    (reused by evaluate_generator rather than recomputed per generator).
+    `reference_returns` against itself (no generator involved).
+
+    `path_length` MUST equal the length of the generator paths that will
+    actually be scored against these bands (see
+    benchmark/conformal.py::calibrate_band's docstring) -- a real,
+    previously-shipped bug here calibrated bands at the reference's own
+    (much longer) length and then scored much-shorter generator paths
+    against them, which silently rejected everything, real or synthetic,
+    purely from the sample-size mismatch (see
+    diagnostics/2026-08-13-conformal-band-length-mismatch/findings.md).
+
+    Returns the per-fact bands plus the reference's own
+    StylizedFactsSummary (computed at the reference's own full length --
+    the most stable available estimate of "what real markets look like" --
+    and reused by evaluate_generator rather than recomputed per generator).
     """
 
     def stat_fn(r: np.ndarray) -> StylizedFactsSummary:
@@ -60,6 +73,7 @@ def calibrate_reference_bands(
             alpha=alpha,
             n_bootstrap=n_bootstrap,
             block_size=block_size,
+            resample_length=path_length,
             seed=seed,
         )
         for fact in FACT_NAMES

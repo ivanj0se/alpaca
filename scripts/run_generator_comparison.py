@@ -83,9 +83,19 @@ def main() -> None:
     reference_returns = frame["log_return"].to_numpy()
     print(f"{len(reference_returns)} real reference returns")
 
+    # Shared bar count so every generator arm covers the same horizon --
+    # computed before calibration since the bands must be calibrated at
+    # THIS length, not the (much longer) reference's own length. See
+    # calibrate_reference_bands's docstring: scoring shorter generator
+    # paths against bands calibrated at the reference's full length
+    # silently rejects everything, real or synthetic, purely from the
+    # sample-size mismatch.
+    n_bars = int(np.ceil(hawkes_cfg["T_days"] * 6.5 * 3600 / hawkes_cfg["bar_seconds"]))
+
     print("\n=== Calibrating reference bands (real data only) ===")
     bands, reference_facts = calibrate_reference_bands(
         reference_returns,
+        path_length=n_bars,
         alpha=cf_cfg["alpha"],
         n_bootstrap=cf_cfg["n_bootstrap"],
         block_size=cf_cfg["block_size"],
@@ -96,9 +106,6 @@ def main() -> None:
     )
     for fact, band in bands.items():
         print(f"  {fact}: threshold={band.threshold:.5f}")
-
-    # Shared bar count so every generator arm covers the same horizon.
-    n_bars = int(np.ceil(hawkes_cfg["T_days"] * 6.5 * 3600 / hawkes_cfg["bar_seconds"]))
 
     print("\n=== Rung G-1: GBM null ===")
     closes = bars.sort_values("timestamp")["close"]

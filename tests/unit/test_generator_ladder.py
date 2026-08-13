@@ -20,7 +20,7 @@ def _reference():
 
 class TestCalibrateReferenceBands:
     def test_returns_a_band_per_fact_and_a_reference_summary(self):
-        bands, reference_facts = calibrate_reference_bands(_reference(), n_bootstrap=20, block_size=50, seed=0)
+        bands, reference_facts = calibrate_reference_bands(_reference(), path_length=3000, n_bootstrap=20, block_size=50, seed=0)
         assert set(bands.keys()) == set(FACT_NAMES)
         assert all(b.threshold >= 0 for b in bands.values())
         assert reference_facts.excess_kurtosis is not None
@@ -28,13 +28,13 @@ class TestCalibrateReferenceBands:
 
 class TestEvaluateGenerator:
     def test_raises_on_empty_paths(self):
-        bands, reference_facts = calibrate_reference_bands(_reference(), n_bootstrap=10, block_size=50, seed=0)
+        bands, reference_facts = calibrate_reference_bands(_reference(), path_length=3000, n_bootstrap=10, block_size=50, seed=0)
         with pytest.raises(ValueError, match="no paths"):
             evaluate_generator("empty", [], reference_facts, bands)
 
     def test_paths_matching_reference_distribution_score_well(self):
         reference = _reference()
-        bands, reference_facts = calibrate_reference_bands(reference, n_bootstrap=100, block_size=50, seed=0)
+        bands, reference_facts = calibrate_reference_bands(reference, path_length=3000, n_bootstrap=100, block_size=50, seed=0)
 
         rng = np.random.default_rng(1)
         same_dist_paths = [
@@ -47,7 +47,7 @@ class TestEvaluateGenerator:
 
     def test_paths_from_a_very_different_distribution_score_poorly(self):
         reference = _reference()
-        bands, reference_facts = calibrate_reference_bands(reference, n_bootstrap=100, block_size=50, seed=0)
+        bands, reference_facts = calibrate_reference_bands(reference, path_length=3000, n_bootstrap=100, block_size=50, seed=0)
 
         # Strong positive lag-1 autocorrelation in raw returns -- real
         # returns have near-zero raw ACF, so this should clearly fail
@@ -69,7 +69,7 @@ class TestEvaluateGenerator:
 
     def test_n_paths_recorded_correctly(self):
         reference = _reference()
-        bands, reference_facts = calibrate_reference_bands(reference, n_bootstrap=10, block_size=50, seed=0)
+        bands, reference_facts = calibrate_reference_bands(reference, path_length=3000, n_bootstrap=10, block_size=50, seed=0)
         rng = np.random.default_rng(3)
         paths = [GeneratedPath(generator_id="x", log_returns=rng.normal(0, 0.001, 3000), seed=i, params={}) for i in range(7)]
         result = evaluate_generator("x", paths, reference_facts, bands)
@@ -108,7 +108,7 @@ class TestGeneratorGateCheck:
 class TestSaveGeneratorReport:
     def test_writes_report_with_expected_content(self, tmp_path):
         reference = _reference()
-        bands, reference_facts = calibrate_reference_bands(reference, n_bootstrap=10, block_size=50, seed=0)
+        bands, reference_facts = calibrate_reference_bands(reference, path_length=3000, n_bootstrap=10, block_size=50, seed=0)
         rng = np.random.default_rng(4)
         paths = [GeneratedPath(generator_id="x", log_returns=rng.normal(0, 0.001, 3000), seed=i, params={}) for i in range(3)]
         result = evaluate_generator("x", paths, reference_facts, bands)

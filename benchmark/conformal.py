@@ -78,6 +78,7 @@ def calibrate_band(
     alpha: float,
     n_bootstrap: int = 500,
     block_size: int = 30,
+    resample_length: int | None = None,
     seed: int | None = None,
 ) -> ConformalBand:
     """Learns how much `distance_fn(stat_fn(resample), stat_fn(reference))`
@@ -86,17 +87,35 @@ def calibrate_band(
     real-data-only calibration step. `threshold` is then the distance a
     generator's own synthetic output must not exceed to "pass" at
     confidence level `1 - alpha`.
+
+    `resample_length` MUST match the length of whatever will actually be
+    scored against this band (a generator's synthetic path), not the
+    reference's own length, which was this function's original (wrong)
+    default. Sample statistics like ACF/kurtosis have sampling variance
+    that shrinks with N -- a band calibrated from resamples as long as a
+    ~23,000-point reference is far too tight for anything scored at
+    ~2,000 points, and would reject real data at that shorter length too.
+    Confirmed the hard way: real ~2,000-point contiguous subsamples of the
+    same real reference series -- genuinely real data, by construction the
+    "most realistic" input possible -- failed a same-length-mismatched
+    band on raw_return_acf and leverage_curve 0/20 times, matching every
+    generator's failure rate on those same facts almost exactly (see
+    diagnostics/2026-08-13-conformal-band-length-mismatch/findings.md).
+    Defaults to `len(reference)` only for backward compatibility with
+    same-length use cases; callers scoring shorter candidates must pass
+    the candidate length explicitly.
     """
     if not 0 < alpha < 1:
         raise ValueError("alpha must be in (0, 1)")
     reference = np.asarray(reference, dtype=float)
     reference_stat = stat_fn(reference)
+    resample_length = resample_length if resample_length is not None else len(reference)
 
     rng = np.random.default_rng(seed)
     null_distances = np.empty(n_bootstrap)
     for i in range(n_bootstrap):
         resample = moving_block_bootstrap(
-            reference, block_size, len(reference), seed=int(rng.integers(0, 2**32 - 1))
+            reference, block_size, resample_length, seed=int(rng.integers(0, 2**32 - 1))
         )
         null_distances[i] = distance_fn(stat_fn(resample), reference_stat)
 

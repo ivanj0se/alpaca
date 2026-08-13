@@ -2,6 +2,18 @@
 
 Date: 2026-08-12
 
+**CORRECTION (2026-08-13):** the "0.000 overall" result below was
+computed against calibration bands with a real length-mismatch bug -- see
+`diagnostics/2026-08-13-conformal-band-length-mismatch/findings.md`.
+Corrected: **overall_score=0.400** (raw_return_acf and leverage_curve
+now pass at 1.00 for every generator tested, not specific to this one --
+those two facts have low discriminating power at this sample length;
+volatility_clustering_acf, excess_kurtosis, and aggregational_kurtosis
+all still fail at 0.00, matching `gbm_null`/`hawkes_control` exactly).
+The core argument below -- this arm is indistinguishable from the other
+structure-free arms and clearly loses to the Hawkes treatment arm -- is
+unaffected and still holds.
+
 Rung G1 of the market-generator comparison suite
 (`/Users/ivanpaiewonsky/.claude/plans/fuzzy-prancing-meteor.md`), built
 last and deliberately kept the simplest of all four generator arms: a

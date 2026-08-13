@@ -2,6 +2,18 @@
 
 Date: 2026-08-12
 
+**CORRECTION (2026-08-13):** the "0% overall coverage" result below was
+computed against calibration bands with a real length-mismatch bug -- see
+`diagnostics/2026-08-13-conformal-band-length-mismatch/findings.md`.
+Corrected: **overall_score=0.400** (raw_return_acf and leverage_curve
+both now pass at 1.00 -- those two facts turn out to have low
+discriminating power at this sample length for *any* generator, not
+specific to this one; volatility_clustering_acf, excess_kurtosis, and
+aggregational_kurtosis still all fail at 0.00, so the qualitative
+conclusion below -- this generator doesn't reproduce real temporal
+structure -- is unchanged). The bug fix, seed-sensitivity check, and
+logvar-clamp bug described below are all unaffected and still accurate.
+
 Rung G3 of the market-generator comparison suite
 (`/Users/ivanpaiewonsky/.claude/plans/fuzzy-prancing-meteor.md`):
 `models/tcn_forecaster.py` reuses `TCNEncoder` for genuinely

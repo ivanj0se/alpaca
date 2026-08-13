@@ -2,6 +2,17 @@
 
 Date: 2026-08-12
 
+**CORRECTION (2026-08-13):** the coverage-rate numbers below (overall
+0.168, per-fact table) were computed against calibration bands with a
+real length-mismatch bug -- see
+`diagnostics/2026-08-13-conformal-band-length-mismatch/findings.md` for
+the full story. Corrected result: **overall_score=0.896**, not 0.168 --
+treatment now clears nearly every fact (excess_kurtosis=1.00,
+aggregational_kurtosis=1.00, volatility_clustering_acf=0.92,
+leverage_curve=0.84, raw_return_acf=0.72), a materially stronger result
+than reported here. The mechanism/setup described below is unaffected by
+the bug and still accurate; only the scoring numbers need the correction.
+
 Rung G2 of the market-generator comparison suite
 (`/Users/ivanpaiewonsky/.claude/plans/fuzzy-prancing-meteor.md`) --
 the most direct test this project has produced of its own founding
