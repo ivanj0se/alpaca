@@ -61,6 +61,11 @@ generators:
     n_steps: 1950                # ~5 trading days of 1-min bars, matches the Hawkes arm's T_days for a fair comparison
     vol_window: 15
     seed: 0
+  zero_intelligence:
+    n_agents: 200
+    order_prob: 0.05
+    n_sims: 25
+    seed: 0
 
 stylized_facts:
   max_lag: 50

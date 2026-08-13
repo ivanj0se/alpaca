@@ -22,6 +22,7 @@ from benchmark.generator_ladder import calibrate_reference_bands, evaluate_gener
 from features.returns import build_feature_frame
 from generators.hawkes_jump_diffusion import generate_ablation_paths
 from generators.path import GeneratedPath
+from generators.zero_intelligence import generate_zero_intelligence_paths
 from ingest.storage import read_bars
 from models.forecaster_generate import generate_forecaster_paths
 
@@ -63,10 +64,12 @@ def main() -> None:
 
     hawkes_cfg = dict(gen_cfg["hawkes_jump_diffusion"])
     tcn_cfg = dict(gen_cfg["tcn_forecaster"])
+    zi_cfg = dict(gen_cfg["zero_intelligence"])
     ticker = args.ticker or hawkes_cfg["ticker"]
     if args.n_sims is not None:
         hawkes_cfg["n_sims"] = args.n_sims
         tcn_cfg["n_sims"] = args.n_sims
+        zi_cfg["n_sims"] = args.n_sims
     if args.epochs is not None:
         tcn_cfg["epochs"] = args.epochs
 
@@ -130,9 +133,20 @@ def main() -> None:
         seed=tcn_cfg["seed"],
     )
 
+    print("\n=== Rung G1: Zero-intelligence agent-based baseline ===")
+    zi_paths = generate_zero_intelligence_paths(
+        reference_returns,
+        n_steps=n_bars,
+        n_sims=zi_cfg["n_sims"],
+        n_agents=zi_cfg["n_agents"],
+        order_prob=zi_cfg["order_prob"],
+        seed=zi_cfg["seed"],
+    )
+
     print("\n=== Evaluating all arms ===")
     all_arms = {
         "gbm_null": gbm_paths,
+        "zero_intelligence": zi_paths,
         "hawkes_control": hawkes_results["control"],
         "hawkes_treatment": hawkes_results["treatment"],
         "tcn_forecaster": tcn_paths,

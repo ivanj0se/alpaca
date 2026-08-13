@@ -54,6 +54,39 @@ mistake -- in particular, any new return computation should go through
 `features/returns.py::session_boundary_mask` rather than reimplementing a
 naive `np.diff(np.log(close))`.
 
+## Market-generator comparison suite (2026-08-12)
+
+A second, separate initiative from the detection ladder above -- see
+`/Users/ivanpaiewonsky/.claude/plans/fuzzy-prancing-meteor.md` for the
+full plan. Answers a different question: not "how anomalous is this
+window" but "can we generate synthetic price paths that statistically
+match real markets, with calibrated confidence." Four generator arms
+(`generators/hawkes_jump_diffusion.py`, `generators/zero_intelligence.py`,
+`baselines/random_walk.py::simulate_gbm` reused as the null,
+`models/tcn_forecaster.py` + `forecaster_generate.py`) are scored through
+one shared harness (`benchmark/stylized_facts.py` -- Cont 2001's five
+checks; `benchmark/conformal.py` -- block-bootstrap calibrated bands,
+deliberately not called "conformal prediction" since real returns aren't
+exchangeable; `benchmark/generator_ladder.py` -- the generative analogue
+of `benchmark/ladder.py`). Run via
+`python -m scripts.run_generator_comparison --ticker SPY`, writes
+`diagnostics/<date>-generator-comparison/report.md`.
+
+**Result as of 2026-08-12**: Hawkes self-excitation (real, live-refit
+branching_ratio) is the only mechanism among everything tested that
+produces measurably realistic market dynamics -- overall_score=0.168 vs.
+0.000 for the zero-self-excitation control, GBM null, zero-intelligence
+agents, and the TCN-forecaster alike. Two real bugs were caught building
+this: the Hawkes optimizer's multistart grid was too narrow (silently
+returned a wrong branching ratio that looked plausible -- see
+`diagnostics/2026-08-11-sip-consolidated-tape-check/`'s CORRECTION
+section) and `TCNForecaster`'s logvar clamp was blindly copied from
+`TCNVAE` at the wrong scale (~140x too large -- see
+`diagnostics/2026-08-12-tcn-forecaster-generative/`). Read those two
+diagnostics entries before touching `events/hawkes.py::fit_hawkes_exponential_multistart`
+or `models/tcn_forecaster.py` for the same reason as the modules listed
+above.
+
 ## Git
 
 Remote: https://github.com/ivanj0se/alpaca (branch `main`, pushed over
