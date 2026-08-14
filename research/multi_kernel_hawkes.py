@@ -147,3 +147,47 @@ def fit_multi_kernel_hawkes(
     converged = [f for f in fits if f.converged]
     candidates = converged or fits
     return max(candidates, key=lambda f: f.loglik)
+
+
+def simulate_multi_kernel_hawkes(
+    mu: float, alphas: np.ndarray, betas: np.ndarray, T: float, seed: int | None = None
+) -> np.ndarray:
+    """Exact cluster/branching simulation, the K-component generalization
+    of events/hawkes.py::simulate_hawkes: immigrants arrive as a
+    homogeneous Poisson(mu) process on [0, T]; each event (immigrant or
+    offspring) independently spawns Poisson(alpha_k/beta_k)-many direct
+    offspring FOR EACH component k, each at parent_time +
+    Exponential(beta_k) -- a sum of K independent self-exciting triggering
+    mechanisms sharing one event stream, which is exactly what the fitted
+    intensity lambda(t) = mu + sum_k alpha_k*sum exp(-beta_k*(t-t_i))
+    describes. Requires sum(alphas/betas) < 1 for a stationary process
+    (same finite-cluster condition as the single-kernel case, generalized
+    to the total branching ratio across all K components).
+    """
+    alphas = np.asarray(alphas, dtype=float)
+    betas = np.asarray(betas, dtype=float)
+    if len(alphas) != len(betas):
+        raise ValueError("alphas and betas must have the same length")
+    branching_ratio_total = float(np.sum(alphas / betas))
+    if branching_ratio_total >= 1:
+        raise ValueError(f"total branching ratio={branching_ratio_total} >= 1 -- not a stationary process")
+
+    rng = np.random.default_rng(seed)
+    events: list[float] = []
+
+    n_immigrants = rng.poisson(mu * T)
+    queue = list(rng.uniform(0, T, n_immigrants))
+
+    while queue:
+        parent_t = queue.pop()
+        if parent_t >= T:
+            continue
+        events.append(parent_t)
+        for alpha_k, beta_k in zip(alphas, betas):
+            n_children = rng.poisson(alpha_k / beta_k)
+            if n_children > 0:
+                offsets = rng.exponential(1.0 / beta_k, n_children)
+                child_times = parent_t + offsets
+                queue.extend(child_times[child_times < T].tolist())
+
+    return np.sort(np.array(events))

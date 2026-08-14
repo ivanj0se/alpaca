@@ -7,6 +7,7 @@ from research.multi_kernel_hawkes import (
     _recursive_sums,
     default_timescale_grid,
     fit_multi_kernel_hawkes,
+    simulate_multi_kernel_hawkes,
 )
 
 
@@ -92,3 +93,74 @@ class TestFitMultiKernelHawkes:
         events = simulate_hawkes(mu=0.05, alpha=0.4, beta=1.0, T=3000, seed=4)
         result = fit_multi_kernel_hawkes(events, betas=np.array([0.3, 1.0, 3.0]))
         assert result.converged
+
+
+class TestSimulateMultiKernelHawkes:
+    def test_rejects_supercritical_total_branching_ratio(self):
+        with pytest.raises(ValueError, match=">= 1"):
+            simulate_multi_kernel_hawkes(mu=0.1, alphas=np.array([0.6, 0.6]), betas=np.array([1.0, 1.0]), T=100)
+
+    def test_events_sorted_and_within_window(self):
+        events = simulate_multi_kernel_hawkes(
+            mu=0.05, alphas=np.array([0.2, 0.1]), betas=np.array([1.0, 10.0]), T=1000, seed=0
+        )
+        assert np.all(np.diff(events) >= 0)
+        assert np.all(events >= 0) and np.all(events < 1000)
+
+    def test_reproducible_with_seed(self):
+        kwargs = dict(mu=0.05, alphas=np.array([0.2, 0.1]), betas=np.array([1.0, 10.0]), T=1000, seed=7)
+        e1 = simulate_multi_kernel_hawkes(**kwargs)
+        e2 = simulate_multi_kernel_hawkes(**kwargs)
+        assert np.array_equal(e1, e2)
+
+    def test_raises_on_mismatched_lengths(self):
+        with pytest.raises(ValueError, match="same length"):
+            simulate_multi_kernel_hawkes(mu=0.05, alphas=np.array([0.2, 0.1]), betas=np.array([1.0]), T=100)
+
+    def test_k_equals_one_matches_single_kernel_simulator_in_distribution(self):
+        # Not sample-equal (different internal RNG call sequence: the
+        # single-kernel simulator draws one Poisson/Exponential pair per
+        # parent, the multi-kernel one loops per-component even at K=1) --
+        # but should produce statistically indistinguishable event counts
+        # at the same seed *distribution* (many seeds), the same
+        # consistency-with-the-trusted-implementation check style already
+        # used for fit_multi_kernel_hawkes's K=1 case.
+        single_counts = [len(simulate_hawkes(0.05, 0.4, 1.0, T=2000, seed=s)) for s in range(20)]
+        multi_counts = [
+            len(simulate_multi_kernel_hawkes(0.05, np.array([0.4]), np.array([1.0]), T=2000, seed=s))
+            for s in range(20)
+        ]
+        assert np.mean(multi_counts) == pytest.approx(np.mean(single_counts), rel=0.15)
+
+    def test_more_components_produce_more_events_on_average(self):
+        low = [
+            len(simulate_multi_kernel_hawkes(0.05, np.array([0.4]), np.array([1.0]), T=2000, seed=s))
+            for s in range(15)
+        ]
+        high = [
+            len(simulate_multi_kernel_hawkes(0.05, np.array([0.4, 0.3]), np.array([1.0, 5.0]), T=2000, seed=s))
+            for s in range(15)
+        ]
+        assert np.mean(high) > np.mean(low)
+
+
+class TestMultiKernelSimulateRefitRecover:
+    """Same trust-gate pattern as tests/unit/test_hawkes.py's
+    TestSimulateRefitRecover: simulate with known per-component
+    parameters, refit on the SAME betas, confirm recovery -- validates
+    that the branching-representation generalization to K components
+    (simulate_multi_kernel_hawkes) and the K-component MLE fitter
+    (fit_multi_kernel_hawkes) are mutually consistent before either is
+    trusted on real data.
+    """
+
+    TRUE_MU = 0.05
+    TRUE_ALPHAS = np.array([0.3, 0.15])
+    TRUE_BETAS = np.array([1.0, 10.0])
+    T = 8000  # wider than the single-kernel case -- two components split the signal, needs more events to identify both
+
+    def test_recovers_total_branching_ratio_within_25_percent(self):
+        events = simulate_multi_kernel_hawkes(self.TRUE_MU, self.TRUE_ALPHAS, self.TRUE_BETAS, T=self.T, seed=42)
+        fit = fit_multi_kernel_hawkes(events, betas=self.TRUE_BETAS, T=self.T)
+        true_total = float(np.sum(self.TRUE_ALPHAS / self.TRUE_BETAS))
+        assert fit.branching_ratio_total == pytest.approx(true_total, rel=0.25)
