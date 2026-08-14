@@ -158,3 +158,55 @@ def fit_cox_hawkes(
     converged = [f for f in fits if f.converged]
     candidates = converged or fits
     return max(candidates, key=lambda f: f.loglik)
+
+
+def simulate_cox_hawkes(
+    mu0: float,
+    gamma: float,
+    alpha: float,
+    beta: float,
+    grid_covariate: np.ndarray,
+    grid_durations: np.ndarray,
+    seed: int | None = None,
+) -> np.ndarray:
+    """Exact cluster/branching simulation with a piecewise-constant
+    covariate-driven baseline: because grid_covariate/grid_durations
+    already describe mu(t) as exactly constant WITHIN each segment (the
+    same discretization the fitted likelihood's baseline compensator
+    integrates against), immigrants can be drawn exactly per segment as a
+    homogeneous Poisson(mu0*exp(gamma*x_segment)) process -- no thinning
+    approximation needed. Offspring generation is identical to
+    events/hawkes.py::simulate_hawkes's branching representation (the
+    self-excitation term doesn't depend on the covariate at all).
+    """
+    grid_covariate = np.asarray(grid_covariate, dtype=float)
+    grid_durations = np.asarray(grid_durations, dtype=float)
+    if len(grid_covariate) != len(grid_durations):
+        raise ValueError("grid_covariate and grid_durations must have the same length")
+    if alpha >= beta:
+        raise ValueError("alpha must be < beta (branching ratio < 1) for a stationary process")
+
+    rng = np.random.default_rng(seed)
+    grid_starts = np.concatenate([[0.0], np.cumsum(grid_durations)[:-1]])
+    T = float(np.sum(grid_durations))
+
+    queue: list[float] = []
+    for start, duration, x in zip(grid_starts, grid_durations, grid_covariate):
+        rate = mu0 * np.exp(gamma * x)
+        n_immigrants = rng.poisson(rate * duration)
+        if n_immigrants > 0:
+            queue.extend((start + rng.uniform(0, duration, n_immigrants)).tolist())
+
+    events: list[float] = []
+    while queue:
+        parent_t = queue.pop()
+        if parent_t >= T:
+            continue
+        events.append(parent_t)
+        n_children = rng.poisson(alpha / beta)
+        if n_children > 0:
+            offsets = rng.exponential(1.0 / beta, n_children)
+            child_times = parent_t + offsets
+            queue.extend(child_times[child_times < T].tolist())
+
+    return np.sort(np.array(events))
