@@ -123,3 +123,27 @@ class TestGenerateCoxHawkesPaths:
 
         with pytest.raises(ValueError, match="less than half"):
             generate_cox_hawkes_paths(tmp_path, cf, ticker="SPY", T_days=100.0, n_sims=1, seed=0)
+
+    def test_simulated_span_never_overshoots_the_requested_t_days(self, tmp_path):
+        # Regression test for a real bug: an earlier version rounded UP to
+        # "at least T_requested" instead of clipping the final grid
+        # segment, AND used calendar days (86400s) instead of the same
+        # session-day convention every other arm in this module uses --
+        # together those produced paths ~5x longer than
+        # generate_multi_kernel_paths/generate_ablation_paths at the same
+        # T_days, which silently invalidated a real comparison against
+        # bands calibrated at the shorter length (see
+        # diagnostics/2026-08-14-tier3-hawkes-extensions-ablation/). Every
+        # path's implied duration (n_bars*bar_seconds) must land within
+        # one bar of T_days*SESSION_SECONDS_PER_DAY, never over.
+        from generators.hawkes_extensions_generator import SESSION_SECONDS_PER_DAY
+
+        write_ticks(_synthetic_ticks("SPY", "2026-01-02 09:30", 4000, burst_at=BURSTS), tmp_path)
+        write_bars(_synthetic_bars("2026-01-02 09:30", 4000), tmp_path)
+        cf = _synthetic_common_factor("2026-01-01", 96, freq="1h")
+
+        T_days = 0.05
+        bar_seconds = 60.0
+        paths = generate_cox_hawkes_paths(tmp_path, cf, ticker="SPY", T_days=T_days, bar_seconds=bar_seconds, n_sims=1, seed=0)
+        expected_bars = T_days * SESSION_SECONDS_PER_DAY / bar_seconds
+        assert len(paths[0].log_returns) <= expected_bars + 1

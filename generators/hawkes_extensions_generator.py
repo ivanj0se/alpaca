@@ -220,28 +220,47 @@ def generate_cox_hawkes_paths(
     we invent plausible synthetic exogenous histories" (a different,
     harder question this generator does not attempt).
 
-    Truncates the real covariate grid to the first T_days*86400 calendar
-    seconds (calendar, not session-compressed -- see
-    fit_real_cox_hawkes_params) -- if the real covariate span is shorter
-    than that, uses whatever is available and raises if it's under half
-    the requested T_days.
+    Truncates the real covariate grid (itself indexed in raw calendar
+    seconds -- see fit_real_cox_hawkes_params) to exactly
+    T_days*SESSION_SECONDS_PER_DAY seconds of real covariate history --
+    T_days uses the SAME session-trading-day convention as
+    generate_multi_kernel_paths and hawkes_jump_diffusion.py's
+    generate_ablation_paths, deliberately, NOT calendar days: every arm
+    evaluated by benchmark/generator_ladder.py must produce the exact
+    same bar count, since calibrate_reference_bands calibrates its bands
+    at one specific path_length and scoring a different-length path
+    against them silently measures the length mismatch, not realism
+    (the exact bug already caught once, see
+    diagnostics/2026-08-13-conformal-band-length-mismatch/). An earlier
+    version of this function used calendar days (86400s) here AND
+    rounded UP to "at least T_requested" rather than clipping the final
+    segment -- together those produced paths 5x longer than every other
+    arm, and a spuriously bad realism score that was actually just this
+    same length-mismatch bug wearing a new hat (see
+    diagnostics/2026-08-14-tier3-hawkes-extensions-ablation/). Clips the
+    final included grid segment's duration so T_actual always lands
+    EXACTLY on the target, never over.
     """
     fit, grid_vals, grid_durations = fit_real_cox_hawkes_params(
         data_dir, common_factor, ticker=ticker, sigma_threshold=sigma_threshold
     )
 
-    T_requested = T_days * 86400.0
+    T_requested = T_days * SESSION_SECONDS_PER_DAY
     cum = np.cumsum(grid_durations)
-    n_keep = int(np.searchsorted(cum, T_requested, side="right")) + 1
-    n_keep = min(n_keep, len(grid_durations))
-    grid_vals = grid_vals[:n_keep]
-    grid_durations = grid_durations[:n_keep]
-    T_actual = float(grid_durations.sum())
-    if T_actual < T_requested * 0.5:
+    total_available = float(cum[-1]) if len(cum) > 0 else 0.0
+    if total_available < T_requested * 0.5:
         raise ValueError(
-            f"real covariate window only covers {T_actual:.0f}s, less than half the requested "
+            f"real covariate window only covers {total_available:.0f}s, less than half the requested "
             f"{T_requested:.0f}s ({T_days} days) -- extend the RPCA common-factor series first"
         )
+    n_keep = int(np.searchsorted(cum, T_requested, side="left")) + 1
+    n_keep = min(n_keep, len(grid_durations))
+    grid_vals = grid_vals[:n_keep]
+    grid_durations = grid_durations[:n_keep].copy()
+    overshoot = float(cum[n_keep - 1]) - T_requested
+    if overshoot > 0:
+        grid_durations[-1] -= overshoot
+    T_actual = float(grid_durations.sum())
 
     bars = read_bars(data_dir, tickers=[ticker])
     frame = build_feature_frame(bars, vol_window=15, volume_window=15)
@@ -262,7 +281,7 @@ def generate_cox_hawkes_paths(
                 generator_id="cox_hawkes_rpca",
                 log_returns=returns,
                 seed=sim_seed,
-                params={"mu0": fit.mu0, "gamma": fit.gamma, "alpha": fit.alpha, "beta": fit.beta, "T_days_actual": T_actual / 86400.0},
+                params={"mu0": fit.mu0, "gamma": fit.gamma, "alpha": fit.alpha, "beta": fit.beta, "T_days": T_days},
             )
         )
     return paths
