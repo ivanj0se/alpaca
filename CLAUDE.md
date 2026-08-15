@@ -107,6 +107,37 @@ touching the relevant module:
    `resample_length`/`path_length` must always match whatever will
    actually be scored against the calibrated band.
 
+## Self-excitation research extension -- CLOSED (2026-08-15)
+
+A private, unpublished six-tier follow-on to the generator suite above,
+each tier chosen to try something genuinely new rather than replicate
+published work. See `diagnostics/2026-08-15-self-excitation-research-wrap-up/`
+for the full closing summary. Short version: real, statistically
+significant structure was found and validated in several places --
+multi-timescale self-excitation (`research/multi_kernel_hawkes.py`,
+IEX/SIP operate at genuinely different clock speeds and the multi-kernel
+arm generatively beats the original single-exponential baseline, 0.904
+vs 0.864), a real RPCA exogenous-baseline effect
+(`research/cox_hawkes.py`, gamma=-0.1396), rough-volatility-consistent
+Hurst exponents (H≈0.08-0.11, matching El Euch/Fukasawa/Rosenbaum's
+theory), and a real sign-asymmetric leverage effect
+(`research/asymmetric_quadratic_hawkes.py`, kappa_minus > kappa_plus,
+p=0.00034).
+
+**None of it is a tradable edge.** Tested directly on real data across
+five signal types (the above plus news tone and order-flow imbalance) --
+every real effect found falls short of realistic trading costs by
+roughly an order of magnitude or more (best case: order-flow imbalance's
+top-decile subset, still ~18x short). This is a real, evidence-based
+finding from this extension, not an assumption -- see
+`diagnostics/2026-08-15-leverage-signal-tradability-check/` and
+`diagnostics/2026-08-15-alternative-signal-sources/`. Consistent with
+this project's standing "not a trading bot" framing.
+
+Closed as of this entry -- no further tiers planned. If this line of
+work resumes, start from a fresh question rather than extending these
+specific models further.
+
 ## Git
 
 Remote: https://github.com/ivanj0se/alpaca (branch `main`, pushed over
