@@ -28,6 +28,31 @@ class TestLabelEventsByNewsProximity:
         mask = label_events_by_news_proximity(far_events, news, match_window=pd.Timedelta(minutes=10))
         assert not mask.any()
 
+    def test_duplicate_event_timestamps_are_labeled_independently_by_position(self):
+        # Real tick data has genuine duplicate timestamps (multiple trades
+        # sharing a microsecond during a burst -- confirmed on real SPY
+        # data, see diagnostics/2026-08-13-cox-hawkes-rpca-baseline/).
+        # label_events_by_news_proximity restores order via argsort + a
+        # fancy-index scatter (result[order] = matched_sorted), which
+        # operates on POSITIONS, not on the timestamp VALUES -- unlike the
+        # reindex/union chain that broke in the Cox-Hawkes real-data
+        # script (a genuinely different failure mode: that bug came from
+        # pandas' Index.union() not fully deduplicating a duplicate-valued
+        # DatetimeIndex used as a merge key). Confirms directly rather
+        # than only reasoning about it: three input events share the
+        # SAME timestamp, one near news and two far from any news, and
+        # each should still get its own independent, correct label.
+        news = _news(n=3, seed=5)
+        news_times = pd.DatetimeIndex(news["timestamp"])
+        near_time = news_times[0] + pd.Timedelta(minutes=1)
+        far_time = WINDOW_START + pd.Timedelta(hours=100)
+
+        event_times = pd.DatetimeIndex([near_time, far_time, far_time])
+        mask = label_events_by_news_proximity(event_times, news, match_window=pd.Timedelta(minutes=10))
+        assert len(mask) == 3
+        assert mask[0]  # near-news event, real timestamp value shared with nothing else here
+        assert not mask[1] and not mask[2]  # both far-from-news events, despite sharing an identical timestamp
+
 
 class TestCompareMagnitudeDistributions:
     def test_detects_a_planted_magnitude_difference(self):
